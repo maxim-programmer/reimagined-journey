@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/cache"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/config"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/elastic"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/handler"
@@ -35,9 +36,15 @@ func main() {
 		log.Fatalf("failed to ensure elasticsearch index: %v", err)
 	}
 
+	redisCache := cache.NewRedisCache(cfg.RedisAddr)
+	if err := redisCache.Ping(context.Background()); err != nil {
+		log.Fatalf("failed to connect to redis: %v", err)
+	}
+	log.Printf("connected to redis at %s", cfg.RedisAddr)
+
 	docRepo := repository.NewDocumentRepository(db)
 	chunkRepo := repository.NewChunkRepository(db)
-	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient)
+	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient, redisCache)
 	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
 
 	mux := http.NewServeMux()

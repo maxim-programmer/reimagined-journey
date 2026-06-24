@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/cache"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/chunker"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/elastic"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/extractor"
@@ -27,10 +28,16 @@ type DocumentService struct {
 	repo      documentRepo
 	chunkRepo chunkRepo
 	esClient  *elastic.Client
+	cache     *cache.RedisCache
 }
 
-func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elastic.Client) *DocumentService {
-	return &DocumentService{repo: repo, chunkRepo: chunkRepo, esClient: esClient}
+func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elastic.Client, redisCache *cache.RedisCache) *DocumentService {
+	return &DocumentService{
+		repo:      repo,
+		chunkRepo: chunkRepo,
+		esClient:  esClient,
+		cache:     redisCache,
+	}
 }
 
 func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error) {
@@ -95,9 +102,27 @@ func (s *DocumentService) Search(ctx context.Context, query string) ([]elastic.S
 	if query == "" {
 		return []elastic.SearchHit{}, nil
 	}
+
+	cacheKey := cache.SearchKey(query)
+
+	var cached []elastic.SearchHit
+	hit, err := s.cache.Get(ctx, cacheKey, &cached)
+	if err != nil {
+		log.Printf("cache get warning for query %q: %v", query, err)
+	}
+	if hit {
+		log.Printf("cache hit for query %q", query)
+		return cached, nil
+	}
+
 	hits, err := s.esClient.Search(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
+
+	if setErr := s.cache.Set(ctx, cacheKey, hits, cache.SearchTTL); setErr != nil {
+		log.Printf("cache set warning for query %q: %v", query, setErr)
+	}
+
 	return hits, nil
 }
