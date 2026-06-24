@@ -46,12 +46,20 @@ func RunMigrations(ctx context.Context, db *pgxpool.Pool) error {
 			id           BIGSERIAL   PRIMARY KEY,
 			document_id  TEXT        NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
 			chunk_index  INT         NOT NULL,
+			page_number  INT         NOT NULL DEFAULT 1,
 			content      TEXT        NOT NULL,
 			created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
 	`)
 	if err != nil {
 		return fmt.Errorf("create table document_chunks: %w", err)
+	}
+
+	_, err = db.Exec(ctx, `
+		ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS page_number INT NOT NULL DEFAULT 1
+	`)
+	if err != nil {
+		return fmt.Errorf("alter table document_chunks add page_number: %w", err)
 	}
 
 	_, err = db.Exec(ctx, `

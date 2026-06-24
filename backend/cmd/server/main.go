@@ -37,7 +37,7 @@ func main() {
 
 	docRepo := repository.NewDocumentRepository(db)
 	chunkRepo := repository.NewChunkRepository(db)
-	docSvc := service.NewDocumentService(docRepo, chunkRepo)
+	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient)
 	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
 
 	mux := http.NewServeMux()

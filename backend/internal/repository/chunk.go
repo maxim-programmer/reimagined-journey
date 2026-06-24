@@ -24,13 +24,13 @@ func (r *ChunkRepository) CreateBatch(ctx context.Context, chunks []model.Chunk)
 
 	rows := make([][]any, len(chunks))
 	for i, c := range chunks {
-		rows[i] = []any{c.DocumentID, c.ChunkIndex, c.Content}
+		rows[i] = []any{c.DocumentID, c.ChunkIndex, c.PageNumber, c.Content}
 	}
 
 	_, err := r.db.CopyFrom(
 		ctx,
 		pgx.Identifier{"document_chunks"},
-		[]string{"document_id", "chunk_index", "content"},
+		[]string{"document_id", "chunk_index", "page_number", "content"},
 		pgx.CopyFromRows(rows),
 	)
 	if err != nil {
@@ -42,7 +42,7 @@ func (r *ChunkRepository) CreateBatch(ctx context.Context, chunks []model.Chunk)
 
 func (r *ChunkRepository) ListByDocument(ctx context.Context, documentID string) ([]model.Chunk, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, document_id, chunk_index, content, created_at
+		`SELECT id, document_id, chunk_index, page_number, content, created_at
 		 FROM document_chunks
 		 WHERE document_id = $1
 		 ORDER BY chunk_index`,
@@ -56,7 +56,7 @@ func (r *ChunkRepository) ListByDocument(ctx context.Context, documentID string)
 	var chunks []model.Chunk
 	for rows.Next() {
 		var c model.Chunk
-		if err := rows.Scan(&c.ID, &c.DocumentID, &c.ChunkIndex, &c.Content, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.DocumentID, &c.ChunkIndex, &c.PageNumber, &c.Content, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan chunk: %w", err)
 		}
 		chunks = append(chunks, c)

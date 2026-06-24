@@ -2,35 +2,49 @@ package extractor
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/model"
 )
 
-func ExtractText(filePath, mimeType string) (string, error) {
+func ExtractPages(filePath, mimeType string) ([]model.PageText, error) {
 	switch mimeType {
 	case "application/pdf":
-		return extractPDF(filePath)
+		return extractPDFPages(filePath)
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-		return extractDOCX(filePath)
+		return extractDOCXPages(filePath)
 	default:
-		return "", fmt.Errorf("unsupported mime type: %s", mimeType)
+		return nil, fmt.Errorf("unsupported mime type: %s", mimeType)
 	}
 }
 
-func extractPDF(filePath string) (string, error) {
+func ExtractText(filePath, mimeType string) (string, error) {
+	pages, err := ExtractPages(filePath, mimeType)
+	if err != nil {
+		return "", err
+	}
+	var parts []string
+	for _, p := range pages {
+		if p.Text != "" {
+			parts = append(parts, p.Text)
+		}
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func extractPDFPages(filePath string) ([]model.PageText, error) {
 	f, r, err := pdf.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("open pdf: %w", err)
+		return nil, fmt.Errorf("open pdf: %w", err)
 	}
 	defer f.Close()
 
-	var buf bytes.Buffer
 	totalPages := r.NumPage()
+	var pages []model.PageText
 	for i := 1; i <= totalPages; i++ {
 		page := r.Page(i)
 		if page.V.IsNull() {
@@ -40,12 +54,15 @@ func extractPDF(filePath string) (string, error) {
 		if err != nil {
 			continue
 		}
-		buf.WriteString(text)
-		if i < totalPages {
-			buf.WriteRune('\n')
+		text = strings.TrimSpace(text)
+		if text != "" {
+			pages = append(pages, model.PageText{
+				PageNumber: i,
+				Text:       text,
+			})
 		}
 	}
-	return strings.TrimSpace(buf.String()), nil
+	return pages, nil
 }
 
 type docxDocument struct {
@@ -64,10 +81,10 @@ type docxRun struct {
 	Text string `xml:"t"`
 }
 
-func extractDOCX(filePath string) (string, error) {
+func extractDOCXPages(filePath string) ([]model.PageText, error) {
 	zr, err := zip.OpenReader(filePath)
 	if err != nil {
-		return "", fmt.Errorf("open docx zip: %w", err)
+		return nil, fmt.Errorf("open docx zip: %w", err)
 	}
 	defer zr.Close()
 
@@ -79,27 +96,27 @@ func extractDOCX(filePath string) (string, error) {
 		}
 	}
 	if docFile == nil {
-		return "", fmt.Errorf("word/document.xml not found in docx")
+		return nil, fmt.Errorf("word/document.xml not found in docx")
 	}
 
 	rc, err := docFile.Open()
 	if err != nil {
-		return "", fmt.Errorf("open document.xml: %w", err)
+		return nil, fmt.Errorf("open document.xml: %w", err)
 	}
 	defer rc.Close()
 
 	data, err := io.ReadAll(rc)
 	if err != nil {
-		return "", fmt.Errorf("read document.xml: %w", err)
+		return nil, fmt.Errorf("read document.xml: %w", err)
 	}
 
 	var doc docxDocument
 	if err := xml.Unmarshal(data, &doc); err != nil {
-		return "", fmt.Errorf("parse document.xml: %w", err)
+		return nil, fmt.Errorf("parse document.xml: %w", err)
 	}
 
 	var sb strings.Builder
-	for i, para := range doc.Body.Paragraphs {
+	for _, para := range doc.Body.Paragraphs {
 		var line strings.Builder
 		for _, run := range para.Runs {
 			line.WriteString(run.Text)
@@ -111,7 +128,14 @@ func extractDOCX(filePath string) (string, error) {
 			}
 			sb.WriteString(text)
 		}
-		_ = i
 	}
-	return sb.String(), nil
+
+	fullText := sb.String()
+	if fullText == "" {
+		return nil, nil
+	}
+
+	return []model.PageText{
+		{PageNumber: 1, Text: fullText},
+	}, nil
 }
