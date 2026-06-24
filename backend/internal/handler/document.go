@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,10 +20,13 @@ const (
 	maxFileSize = 20 << 20
 )
 
-var allowedMIMETypes = map[string]bool{
-	"application/pdf": true,
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
+var allowedExtensions = map[string]string{
+	".pdf":  "application/pdf",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+
+var zipMagic = []byte{0x50, 0x4B, 0x03, 0x04}
+var pdfMagic = []byte{0x25, 0x50, 0x44, 0x46}
 
 type documentRepo interface {
 	Create(ctx context.Context, doc *model.Document) error
@@ -50,6 +55,20 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+func detectMIMEType(buf []byte, ext string) (string, bool) {
+	switch ext {
+	case ".pdf":
+		if len(buf) >= 4 && bytes.Equal(buf[:4], pdfMagic) {
+			return "application/pdf", true
+		}
+	case ".docx":
+		if len(buf) >= 4 && bytes.Equal(buf[:4], zipMagic) {
+			return "application/vnd.openxmlformats-officedocument.wordprocessingml.document", true
+		}
+	}
+	return "", false
+}
+
 func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(maxFileSize); err != nil {
 		writeError(w, http.StatusBadRequest, "request body too large or malformed")
@@ -68,16 +87,22 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if _, ok := allowedExtensions[ext]; !ok {
+		writeError(w, http.StatusBadRequest, "unsupported file type: only PDF and DOCX are allowed")
+		return
+	}
+
 	buf := make([]byte, 512)
 	n, err := file.Read(buf)
 	if err != nil && err != io.EOF {
 		writeError(w, http.StatusInternalServerError, "failed to read file")
 		return
 	}
-	mimeType := http.DetectContentType(buf[:n])
 
-	if !allowedMIMETypes[mimeType] {
-		writeError(w, http.StatusBadRequest, "unsupported file type: only PDF and DOCX are allowed")
+	mimeType, ok := detectMIMEType(buf[:n], ext)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "file content does not match its extension: only PDF and DOCX are allowed")
 		return
 	}
 
@@ -87,7 +112,6 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := uuid.NewString()
-	ext := filepath.Ext(header.Filename)
 	destPath := filepath.Join(h.uploadDir, id+ext)
 
 	dst, err := os.Create(destPath)
