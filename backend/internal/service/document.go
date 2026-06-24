@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/chunker"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/extractor"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/model"
 )
@@ -16,12 +17,18 @@ type documentRepo interface {
 	List(ctx context.Context) ([]model.Document, error)
 }
 
-type DocumentService struct {
-	repo documentRepo
+type chunkRepo interface {
+	CreateBatch(ctx context.Context, chunks []model.Chunk) error
+	ListByDocument(ctx context.Context, documentID string) ([]model.Chunk, error)
 }
 
-func NewDocumentService(repo documentRepo) *DocumentService {
-	return &DocumentService{repo: repo}
+type DocumentService struct {
+	repo      documentRepo
+	chunkRepo chunkRepo
+}
+
+func NewDocumentService(repo documentRepo, chunkRepo chunkRepo) *DocumentService {
+	return &DocumentService{repo: repo, chunkRepo: chunkRepo}
 }
 
 func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error) {
@@ -42,6 +49,21 @@ func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, f
 
 	if err := s.repo.Create(ctx, doc); err != nil {
 		return nil, fmt.Errorf("create document: %w", err)
+	}
+
+	if text != "" {
+		parts := chunker.Split(text)
+		chunks := make([]model.Chunk, len(parts))
+		for i, part := range parts {
+			chunks[i] = model.Chunk{
+				DocumentID: doc.ID,
+				ChunkIndex: i,
+				Content:    part,
+			}
+		}
+		if err := s.chunkRepo.CreateBatch(ctx, chunks); err != nil {
+			log.Printf("chunk creation warning for document %s: %v", doc.ID, err)
+		}
 	}
 
 	return doc, nil

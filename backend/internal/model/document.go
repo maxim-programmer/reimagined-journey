@@ -11,3 +11,11 @@ type Document struct {
 	ExtractedText string    `json:"extracted_text"`
 	UploadedAt    time.Time `json:"uploaded_at"`
 }
+
+type Chunk struct {
+	ID         int64     `json:"id"`
+	DocumentID string    `json:"document_id"`
+	ChunkIndex int       `json:"chunk_index"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+}

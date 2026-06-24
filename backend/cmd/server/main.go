@@ -30,7 +30,8 @@ func main() {
 	}
 
 	docRepo := repository.NewDocumentRepository(db)
-	docSvc := service.NewDocumentService(docRepo)
+	chunkRepo := repository.NewChunkRepository(db)
+	docSvc := service.NewDocumentService(docRepo, chunkRepo)
 	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
 
 	mux := http.NewServeMux()
