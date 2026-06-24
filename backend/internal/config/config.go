@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Addr        string
-	DatabaseURL string
-	UploadDir   string
+	Addr           string
+	DatabaseURL    string
+	UploadDir      string
+	ElasticsearchURL string
 }
 
 func Load() *Config {
@@ -19,9 +20,10 @@ func Load() *Config {
 	}
 
 	return &Config{
-		Addr:        getEnv("SERVER_ADDR", ":8080"),
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/knowledgedb?sslmode=disable"),
-		UploadDir:   getEnv("UPLOAD_DIR", "./uploads"),
+		Addr:             getEnv("SERVER_ADDR", ":8080"),
+		DatabaseURL:      getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/knowledgedb?sslmode=disable"),
+		UploadDir:        getEnv("UPLOAD_DIR", "./uploads"),
+		ElasticsearchURL: getEnv("ELASTICSEARCH_URL", "http://localhost:9200"),
 	}
 }
 

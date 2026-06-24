@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/config"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/elastic"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/handler"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/middleware"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/repository"
@@ -27,6 +28,11 @@ func main() {
 
 	if err := repository.RunMigrations(context.Background(), db); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
+	}
+
+	esClient := elastic.NewClient(cfg.ElasticsearchURL)
+	if err := esClient.EnsureIndex(context.Background()); err != nil {
+		log.Fatalf("failed to ensure elasticsearch index: %v", err)
 	}
 
 	docRepo := repository.NewDocumentRepository(db)
