@@ -27,7 +27,7 @@ var zipMagic = []byte{0x50, 0x4B, 0x03, 0x04}
 var pdfMagic = []byte{0x25, 0x50, 0x44, 0x46}
 
 type documentService interface {
-	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType string) (*model.Document, error)
+	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error)
 	ListDocuments(ctx context.Context) ([]model.Document, error)
 }
 
@@ -109,28 +109,34 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := h.svc.CreateDocument(r.Context(), header.Filename, header.Size, mimeType)
+	tmp, err := os.CreateTemp(h.uploadDir, "upload-*"+ext)
 	if err != nil {
+		log.Printf("create temp file error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to save file")
+		return
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := io.Copy(tmp, file); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		log.Printf("copy file error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to save file")
+		return
+	}
+	tmp.Close()
+
+	doc, err := h.svc.CreateDocument(r.Context(), header.Filename, header.Size, mimeType, tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
 		log.Printf("create document error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to save document metadata")
 		return
 	}
 
-	destPath := filepath.Join(h.uploadDir, doc.ID+ext)
-
-	dst, err := os.Create(destPath)
-	if err != nil {
-		log.Printf("create file error: %v", err)
-		writeError(w, http.StatusInternalServerError, "failed to save file")
-		return
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, file); err != nil {
-		log.Printf("copy file error: %v", err)
-		os.Remove(destPath)
-		writeError(w, http.StatusInternalServerError, "failed to save file")
-		return
+	finalPath := filepath.Join(h.uploadDir, doc.ID+ext)
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		log.Printf("rename file error: %v", err)
 	}
 
 	writeJSON(w, http.StatusCreated, doc)
