@@ -10,9 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/model"
 )
 
@@ -28,21 +26,21 @@ var allowedExtensions = map[string]string{
 var zipMagic = []byte{0x50, 0x4B, 0x03, 0x04}
 var pdfMagic = []byte{0x25, 0x50, 0x44, 0x46}
 
-type documentRepo interface {
-	Create(ctx context.Context, doc *model.Document) error
-	List(ctx context.Context) ([]model.Document, error)
+type documentService interface {
+	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType string) (*model.Document, error)
+	ListDocuments(ctx context.Context) ([]model.Document, error)
 }
 
 type DocumentHandler struct {
-	repo      documentRepo
+	svc       documentService
 	uploadDir string
 }
 
-func NewDocumentHandler(repo documentRepo, uploadDir string) *DocumentHandler {
+func NewDocumentHandler(svc documentService, uploadDir string) *DocumentHandler {
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		log.Fatalf("failed to create upload dir: %v", err)
 	}
-	return &DocumentHandler{repo: repo, uploadDir: uploadDir}
+	return &DocumentHandler{svc: svc, uploadDir: uploadDir}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
@@ -111,8 +109,14 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := uuid.NewString()
-	destPath := filepath.Join(h.uploadDir, id+ext)
+	doc, err := h.svc.CreateDocument(r.Context(), header.Filename, header.Size, mimeType)
+	if err != nil {
+		log.Printf("create document error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to save document metadata")
+		return
+	}
+
+	destPath := filepath.Join(h.uploadDir, doc.ID+ext)
 
 	dst, err := os.Create(destPath)
 	if err != nil {
@@ -124,23 +128,8 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := io.Copy(dst, file); err != nil {
 		log.Printf("copy file error: %v", err)
-		writeError(w, http.StatusInternalServerError, "failed to save file")
-		return
-	}
-
-	doc := &model.Document{
-		ID:         id,
-		FileName:   header.Filename,
-		FileSize:   header.Size,
-		MimeType:   mimeType,
-		Status:     "uploaded",
-		UploadedAt: time.Now().UTC(),
-	}
-
-	if err := h.repo.Create(r.Context(), doc); err != nil {
-		log.Printf("db insert error: %v", err)
 		os.Remove(destPath)
-		writeError(w, http.StatusInternalServerError, "failed to save document metadata")
+		writeError(w, http.StatusInternalServerError, "failed to save file")
 		return
 	}
 
@@ -148,7 +137,7 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.repo.List(r.Context())
+	docs, err := h.svc.ListDocuments(r.Context())
 	if err != nil {
 		log.Printf("list documents error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to retrieve documents")

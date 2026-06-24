@@ -13,6 +13,7 @@ import (
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/handler"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/middleware"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/repository"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/service"
 )
 
 func main() {
@@ -29,7 +30,8 @@ func main() {
 	}
 
 	docRepo := repository.NewDocumentRepository(db)
-	docHandler := handler.NewDocumentHandler(docRepo, cfg.UploadDir)
+	docSvc := service.NewDocumentService(docRepo)
+	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/documents/upload", docHandler.Upload)
