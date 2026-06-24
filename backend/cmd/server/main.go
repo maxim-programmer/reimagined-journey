@@ -43,6 +43,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/documents/upload", docHandler.Upload)
 	mux.HandleFunc("GET /api/v1/documents", docHandler.List)
+	mux.HandleFunc("GET /api/v1/search", docHandler.Search)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

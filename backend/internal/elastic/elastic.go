@@ -31,6 +31,15 @@ type ChunkDocument struct {
 	Text       string `json:"text"`
 }
 
+type SearchHit struct {
+	ChunkID    string  `json:"chunk_id"`
+	DocumentID string  `json:"document_id"`
+	FileName   string  `json:"file_name"`
+	PageNumber int     `json:"page_number"`
+	Text       string  `json:"text"`
+	Score      float64 `json:"score"`
+}
+
 func (c *Client) EnsureIndex(ctx context.Context) error {
 	exists, err := c.indexExists(ctx)
 	if err != nil {
@@ -158,6 +167,69 @@ func (c *Client) IndexChunk(ctx context.Context, doc ChunkDocument) error {
 	}
 
 	return nil
+}
+
+func (c *Client) Search(ctx context.Context, query string) ([]SearchHit, error) {
+	body := map[string]any{
+		"query": map[string]any{
+			"multi_match": map[string]any{
+				"query":  query,
+				"fields": []string{"text", "text.standard", "file_name"},
+				"type":   "best_fields",
+			},
+		},
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal search body: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/%s/_search", c.baseURL, indexName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("create search request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("search request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errBody map[string]any
+		json.NewDecoder(resp.Body).Decode(&errBody)
+		return nil, fmt.Errorf("search failed with status %d: %v", resp.StatusCode, errBody)
+	}
+
+	var esResp struct {
+		Hits struct {
+			Hits []struct {
+				Score  float64       `json:"_score"`
+				Source ChunkDocument `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&esResp); err != nil {
+		return nil, fmt.Errorf("decode search response: %w", err)
+	}
+
+	hits := make([]SearchHit, 0, len(esResp.Hits.Hits))
+	for _, h := range esResp.Hits.Hits {
+		hits = append(hits, SearchHit{
+			ChunkID:    h.Source.ChunkID,
+			DocumentID: h.Source.DocumentID,
+			FileName:   h.Source.FileName,
+			PageNumber: h.Source.PageNumber,
+			Text:       h.Source.Text,
+			Score:      h.Score,
+		})
+	}
+
+	return hits, nil
 }
 
 func (c *Client) indexExists(ctx context.Context) (bool, error) {

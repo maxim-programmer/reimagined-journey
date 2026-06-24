@@ -90,3 +90,14 @@ func (s *DocumentService) ListDocuments(ctx context.Context) ([]model.Document, 
 	}
 	return docs, nil
 }
+
+func (s *DocumentService) Search(ctx context.Context, query string) ([]elastic.SearchHit, error) {
+	if query == "" {
+		return []elastic.SearchHit{}, nil
+	}
+	hits, err := s.esClient.Search(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+	return hits, nil
+}

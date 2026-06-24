@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/elastic"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/model"
 )
 
@@ -29,6 +30,7 @@ var pdfMagic = []byte{0x25, 0x50, 0x44, 0x46}
 type documentService interface {
 	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error)
 	ListDocuments(ctx context.Context) ([]model.Document, error)
+	Search(ctx context.Context, query string) ([]elastic.SearchHit, error)
 }
 
 type DocumentHandler struct {
@@ -153,4 +155,21 @@ func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 		docs = []model.Document{}
 	}
 	writeJSON(w, http.StatusOK, docs)
+}
+
+func (h *DocumentHandler) Search(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query parameter 'q' is required")
+		return
+	}
+
+	hits, err := h.svc.Search(r.Context(), query)
+	if err != nil {
+		log.Printf("search error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to perform search")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, hits)
 }
