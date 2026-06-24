@@ -33,9 +33,8 @@ type ChunkDocument struct {
 
 type SearchHit struct {
 	ChunkID    string  `json:"chunk_id"`
-	DocumentID string  `json:"document_id"`
 	FileName   string  `json:"file_name"`
-	PageNumber int     `json:"page_number"`
+	Page       int     `json:"page"`
 	Text       string  `json:"text"`
 	Score      float64 `json:"score"`
 }
@@ -220,12 +219,11 @@ func (c *Client) Search(ctx context.Context, query string) ([]SearchHit, error) 
 	hits := make([]SearchHit, 0, len(esResp.Hits.Hits))
 	for _, h := range esResp.Hits.Hits {
 		hits = append(hits, SearchHit{
-			ChunkID:    h.Source.ChunkID,
-			DocumentID: h.Source.DocumentID,
-			FileName:   h.Source.FileName,
-			PageNumber: h.Source.PageNumber,
-			Text:       h.Source.Text,
-			Score:      h.Score,
+			ChunkID:  h.Source.ChunkID,
+			FileName: h.Source.FileName,
+			Page:     h.Source.PageNumber,
+			Text:     h.Source.Text,
+			Score:    h.Score,
 		})
 	}
 
