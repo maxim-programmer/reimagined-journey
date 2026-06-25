@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/model"
 )
@@ -47,4 +48,20 @@ func (r *DocumentRepository) List(ctx context.Context) ([]model.Document, error)
 		docs = append(docs, d)
 	}
 	return docs, rows.Err()
+}
+
+func (r *DocumentRepository) GetByID(ctx context.Context, id string) (*model.Document, error) {
+	var d model.Document
+	err := r.db.QueryRow(ctx,
+		`SELECT id, file_name, file_size, mime_type, status, extracted_text, uploaded_at
+		 FROM documents WHERE id = $1`,
+		id,
+	).Scan(&d.ID, &d.FileName, &d.FileSize, &d.MimeType, &d.Status, &d.ExtractedText, &d.UploadedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get document by id: %w", err)
+	}
+	return &d, nil
 }

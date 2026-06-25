@@ -48,9 +48,14 @@ func main() {
 	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
 
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("POST /api/v1/documents/upload", docHandler.Upload)
 	mux.HandleFunc("GET /api/v1/documents", docHandler.List)
+	mux.HandleFunc("GET /api/v1/documents/{id}", docHandler.Get)
 	mux.HandleFunc("GET /api/v1/search", docHandler.Search)
+
+	mux.HandleFunc("GET /api/openapi.yaml", serveOpenAPISpec)
+	mux.HandleFunc("GET /docs", serveSwaggerUI)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,
@@ -62,6 +67,7 @@ func main() {
 
 	go func() {
 		log.Printf("server listening on %s", cfg.Addr)
+		log.Printf("swagger UI available at http://localhost%s/docs", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
@@ -77,4 +83,39 @@ func main() {
 		log.Fatalf("server shutdown error: %v", err)
 	}
 	log.Println("server stopped")
+}
+
+func serveOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	http.ServeFile(w, r, "api/openapi.yaml")
+}
+
+func serveSwaggerUI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Knowledge Base API — Swagger UI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui.min.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-standalone-preset.min.js"></script>
+  <script>
+    window.onload = function() {
+      SwaggerUIBundle({
+        url: "/api/openapi.yaml",
+        dom_id: "#swagger-ui",
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout",
+        deepLinking: true,
+      });
+    };
+  </script>
+</body>
+</html>`))
 }

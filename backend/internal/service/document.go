@@ -17,6 +17,7 @@ import (
 type documentRepo interface {
 	Create(ctx context.Context, doc *model.Document) error
 	List(ctx context.Context) ([]model.Document, error)
+	GetByID(ctx context.Context, id string) (*model.Document, error)
 }
 
 type chunkRepo interface {
@@ -96,6 +97,14 @@ func (s *DocumentService) ListDocuments(ctx context.Context) ([]model.Document, 
 		return nil, fmt.Errorf("list documents: %w", err)
 	}
 	return docs, nil
+}
+
+func (s *DocumentService) GetDocument(ctx context.Context, id string) (*model.Document, error) {
+	doc, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get document: %w", err)
+	}
+	return doc, nil
 }
 
 func (s *DocumentService) Search(ctx context.Context, query string) ([]elastic.SearchHit, error) {

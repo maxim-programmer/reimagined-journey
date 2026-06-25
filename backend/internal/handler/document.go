@@ -30,6 +30,7 @@ var pdfMagic = []byte{0x25, 0x50, 0x44, 0x46}
 type documentService interface {
 	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error)
 	ListDocuments(ctx context.Context) ([]model.Document, error)
+	GetDocument(ctx context.Context, id string) (*model.Document, error)
 	Search(ctx context.Context, query string) ([]elastic.SearchHit, error)
 }
 
@@ -155,6 +156,27 @@ func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 		docs = []model.Document{}
 	}
 	writeJSON(w, http.StatusOK, docs)
+}
+
+func (h *DocumentHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "document id is required")
+		return
+	}
+
+	doc, err := h.svc.GetDocument(r.Context(), id)
+	if err != nil {
+		log.Printf("get document error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve document")
+		return
+	}
+	if doc == nil {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, doc)
 }
 
 func (h *DocumentHandler) Search(w http.ResponseWriter, r *http.Request) {

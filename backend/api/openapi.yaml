@@ -1,0 +1,185 @@
+openapi: 3.0.3
+info:
+  title: Knowledge Base Search API
+  description: REST API для загрузки документов и полнотекстового поиска по ним
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  /api/v1/documents/upload:
+    post:
+      summary: Загрузить документ
+      description: Загружает PDF или DOCX файл, извлекает текст и индексирует в Elasticsearch
+      operationId: uploadDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF или DOCX файл (не более 20 МБ)
+      responses:
+        "201":
+          description: Документ успешно загружен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "400":
+          description: Ошибка валидации (неверный формат, размер превышен)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/documents:
+    get:
+      summary: Список документов
+      description: Возвращает список всех загруженных документов
+      operationId: listDocuments
+      responses:
+        "200":
+          description: Список документов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/documents/{id}:
+    get:
+      summary: Получить документ по ID
+      description: Возвращает информацию о конкретном документе
+      operationId: getDocument
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID документа
+      responses:
+        "200":
+          description: Документ найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "404":
+          description: Документ не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/search:
+    get:
+      summary: Поиск по документам
+      description: Выполняет полнотекстовый поиск по проиндексированным документам через Elasticsearch
+      operationId: searchDocuments
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Поисковый запрос
+      responses:
+        "200":
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchHit"
+        "400":
+          description: Параметр q не указан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        file_name:
+          type: string
+          example: "lecture_01.pdf"
+        file_size:
+          type: integer
+          format: int64
+          example: 1048576
+        mime_type:
+          type: string
+          example: "application/pdf"
+        status:
+          type: string
+          example: "uploaded"
+        extracted_text:
+          type: string
+          example: "Содержимое документа..."
+        uploaded_at:
+          type: string
+          format: date-time
+          example: "2026-06-24T10:00:00Z"
+    SearchHit:
+      type: object
+      properties:
+        chunk_id:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000-0"
+        file_name:
+          type: string
+          example: "lecture_01.pdf"
+        page:
+          type: integer
+          example: 3
+        text:
+          type: string
+          example: "Найденный фрагмент текста..."
+        score:
+          type: number
+          format: float
+          example: 1.42
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "описание ошибки"
