@@ -71,14 +71,54 @@
             <li
               v-for="(hit, index) in searchHits"
               :key="hit.chunk_id || index"
-              class="search-hit"
+              class="hit-card"
             >
-              <div class="search-hit__meta">
-                <span class="search-hit__filename">{{ hit.file_name }}</span>
-                <span v-if="hit.page" class="search-hit__page">стр. {{ hit.page }}</span>
-                <span class="search-hit__score">релевантность: {{ hit.score.toFixed(2) }}</span>
+              <div class="hit-card__header">
+                <div class="hit-card__file">
+                  <svg class="hit-card__file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                    <polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="hit-card__filename">{{ hit.file_name }}</span>
+                </div>
+                <div class="hit-card__score">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  </svg>
+                  <span>{{ hit.score.toFixed(2) }}</span>
+                </div>
               </div>
-              <p class="search-hit__text">{{ hit.text }}</p>
+
+              <div class="hit-card__divider"></div>
+
+              <div class="hit-card__meta">
+                <div v-if="hit.page" class="hit-card__page">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  </svg>
+                  <span>Страница {{ hit.page }}</span>
+                </div>
+                <div v-else class="hit-card__page hit-card__page--unknown">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  </svg>
+                  <span>Страница не определена</span>
+                </div>
+              </div>
+
+              <p class="hit-card__text">{{ hit.text }}</p>
+
+              <div class="hit-card__footer">
+                <span class="hit-card__relevance-label">Релевантность</span>
+                <div class="hit-card__relevance-bar-wrap">
+                  <div
+                    class="hit-card__relevance-bar"
+                    :style="{ width: relevancePercent(hit.score) }"
+                  ></div>
+                </div>
+              </div>
             </li>
           </ul>
 
@@ -222,6 +262,12 @@ export default {
       this.searchDone = false
       this.searchError = ''
       this.lastQuery = ''
+    },
+
+    relevancePercent(score) {
+      const maxScore = Math.max(...this.searchHits.map((h) => h.score), 1)
+      const pct = Math.min((score / maxScore) * 100, 100)
+      return pct.toFixed(1) + '%'
     },
 
     onFilesSelected(files) {
@@ -472,7 +518,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .search-results__label {
@@ -490,57 +536,130 @@ export default {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-.search-hit {
+.hit-card {
   background: #161a27;
   border: 1px solid #232840;
-  border-radius: 10px;
-  padding: 14px 16px;
-  transition: border-color 0.15s;
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.search-hit:hover {
+.hit-card:hover {
   border-color: #4f6ef7;
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.08);
 }
 
-.search-hit__meta {
+.hit-card__header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  gap: 12px;
 }
 
-.search-hit__filename {
-  font-size: 13px;
+.hit-card__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hit-card__file-icon {
+  color: #4f6ef7;
+  flex-shrink: 0;
+}
+
+.hit-card__filename {
+  font-size: 14px;
   font-weight: 600;
   color: #4f6ef7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.search-hit__page {
+.hit-card__score {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f7c14f;
+  background: rgba(247, 193, 79, 0.1);
+  border: 1px solid rgba(247, 193, 79, 0.2);
+  border-radius: 6px;
+  padding: 3px 9px;
+}
+
+.hit-card__divider {
+  height: 1px;
+  background: #1e2236;
+  margin: 0 16px;
+}
+
+.hit-card__meta {
+  padding: 10px 16px 0;
+}
+
+.hit-card__page {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   color: #7b82a0;
   background: #1e2236;
-  padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 5px;
+  padding: 3px 9px;
 }
 
-.search-hit__score {
-  font-size: 11px;
+.hit-card__page--unknown {
   color: #4a5070;
-  margin-left: auto;
 }
 
-.search-hit__text {
+.hit-card__text {
   font-size: 13px;
   color: #c0c4d6;
-  line-height: 1.6;
+  line-height: 1.7;
+  padding: 10px 16px 0;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.hit-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 14px;
+  margin-top: 10px;
+}
+
+.hit-card__relevance-label {
+  font-size: 11px;
+  color: #4a5070;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hit-card__relevance-bar-wrap {
+  flex: 1;
+  height: 3px;
+  background: #1e2236;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hit-card__relevance-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4f6ef7, #7b96ff);
+  border-radius: 2px;
+  transition: width 0.4s ease;
 }
 
 .search-empty {
