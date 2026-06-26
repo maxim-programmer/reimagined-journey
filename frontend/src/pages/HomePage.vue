@@ -106,7 +106,7 @@ export default {
     },
 
     clearQueue() {
-      this.fileQueue = this.fileQueue.filter((f) => f.status === 'uploading')
+      this.fileQueue = this.fileQueue.filter((f) => f.status === 'uploading' || f.status === 'indexing')
     },
 
     async uploadAll() {
@@ -127,11 +127,17 @@ export default {
       item.status = 'uploading'
       try {
         await uploadDocument(item.file)
+        item.status = 'indexing'
+        await this.simulateIndexing()
         item.status = 'done'
       } catch (err) {
         item.status = 'error'
         item.error = err.message
       }
+    },
+
+    simulateIndexing() {
+      return new Promise((resolve) => setTimeout(resolve, 800))
     },
 
     formatSize(bytes) {

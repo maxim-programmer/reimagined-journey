@@ -20,6 +20,9 @@
           <svg v-else-if="item.status === 'uploading'" width="20" height="20" viewBox="0 0 24 24" fill="none" class="spin">
             <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" stroke-dasharray="28 56" stroke-linecap="round"/>
           </svg>
+          <svg v-else-if="item.status === 'indexing'" width="20" height="20" viewBox="0 0 24 24" fill="none" class="spin-slow">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" stroke-dasharray="42 56" stroke-linecap="round"/>
+          </svg>
           <svg v-else-if="item.status === 'done'" width="20" height="20" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
             <polyline points="8 12 11 15 16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -31,29 +34,50 @@
           </svg>
         </div>
 
-        <div class="file-item__info">
-          <span class="file-item__name">{{ item.file.name }}</span>
-          <span class="file-item__meta">{{ formatSize(item.file.size) }}</span>
-        </div>
+        <div class="file-item__body">
+          <div class="file-item__top">
+            <div class="file-item__info">
+              <span class="file-item__name">{{ item.file.name }}</span>
+              <span class="file-item__meta">{{ formatSize(item.file.size) }}</span>
+            </div>
 
-        <div class="file-item__status-label">
-          <span v-if="item.status === 'pending'">Ожидание</span>
-          <span v-else-if="item.status === 'uploading'">Загружается…</span>
-          <span v-else-if="item.status === 'done'">Загружено</span>
-          <span v-else-if="item.status === 'error'" :title="item.error">Ошибка</span>
-        </div>
+            <div class="file-item__right">
+              <span class="file-item__status-label">
+                <span v-if="item.status === 'pending'">Ожидание</span>
+                <span v-else-if="item.status === 'uploading'">Загрузка...</span>
+                <span v-else-if="item.status === 'indexing'">Индексация...</span>
+                <span v-else-if="item.status === 'done'">Готово</span>
+                <span v-else-if="item.status === 'error'" :title="item.error">Ошибка</span>
+              </span>
 
-        <button
-          v-if="item.status === 'pending' || item.status === 'error'"
-          class="file-item__remove"
-          @click="$emit('remove', item.id)"
-          title="Убрать"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
-        </button>
+              <button
+                v-if="item.status === 'pending' || item.status === 'error'"
+                class="file-item__remove"
+                @click="$emit('remove', item.id)"
+                title="Убрать"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="item.status === 'uploading' || item.status === 'indexing' || item.status === 'done' || item.status === 'error'"
+            class="file-item__progress-wrap"
+          >
+            <div class="file-item__progress-track">
+              <div
+                class="file-item__progress-bar"
+                :class="`file-item__progress-bar--${item.status}`"
+                :style="{ width: progressWidth(item.status) }"
+              ></div>
+            </div>
+            <span class="file-item__progress-pct">{{ progressPct(item.status) }}</span>
+          </div>
+        </div>
       </li>
     </ul>
 
@@ -99,6 +123,26 @@ export default {
   },
 
   methods: {
+    progressWidth(status) {
+      const map = {
+        uploading: '45%',
+        indexing: '80%',
+        done: '100%',
+        error: '100%',
+      }
+      return map[status] || '0%'
+    },
+
+    progressPct(status) {
+      const map = {
+        uploading: '45%',
+        indexing: '80%',
+        done: '100%',
+        error: '—',
+      }
+      return map[status] || '0%'
+    },
+
     formatSize(bytes) {
       if (bytes < 1024) return bytes + ' Б'
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ'
@@ -151,9 +195,9 @@ export default {
 
 .file-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 10px 20px;
+  padding: 12px 20px;
   transition: background 0.15s;
 }
 
@@ -166,10 +210,15 @@ export default {
   width: 20px;
   height: 20px;
   color: #4a5070;
+  margin-top: 2px;
 }
 
 .file-item--uploading .file-item__icon {
   color: #4f6ef7;
+}
+
+.file-item--indexing .file-item__icon {
+  color: #9b6ef7;
 }
 
 .file-item--done .file-item__icon {
@@ -178,6 +227,21 @@ export default {
 
 .file-item--error .file-item__icon {
   color: #e05c5c;
+}
+
+.file-item__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .file-item__info {
@@ -201,14 +265,24 @@ export default {
   color: #4a5070;
 }
 
+.file-item__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .file-item__status-label {
   font-size: 12px;
   color: #4a5070;
-  flex-shrink: 0;
 }
 
 .file-item--uploading .file-item__status-label {
   color: #4f6ef7;
+}
+
+.file-item--indexing .file-item__status-label {
+  color: #9b6ef7;
 }
 
 .file-item--done .file-item__status-label {
@@ -235,6 +309,65 @@ export default {
 .file-item__remove:hover {
   color: #e05c5c;
   background: rgba(224, 92, 92, 0.1);
+}
+
+.file-item__progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-item__progress-track {
+  flex: 1;
+  height: 4px;
+  background: #232840;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.file-item__progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.file-item__progress-bar--uploading {
+  background: #4f6ef7;
+  animation: shimmer 1.4s ease-in-out infinite;
+  background-size: 200% 100%;
+  background-image: linear-gradient(
+    90deg,
+    #4f6ef7 0%,
+    #7b96ff 50%,
+    #4f6ef7 100%
+  );
+}
+
+.file-item__progress-bar--indexing {
+  background-image: linear-gradient(
+    90deg,
+    #9b6ef7 0%,
+    #bf9fff 50%,
+    #9b6ef7 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.file-item__progress-bar--done {
+  background: #3ec97a;
+}
+
+.file-item__progress-bar--error {
+  background: #e05c5c;
+}
+
+.file-item__progress-pct {
+  font-size: 11px;
+  color: #4a5070;
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .file-queue__actions {
@@ -283,7 +416,16 @@ export default {
   animation: spin 0.9s linear infinite;
 }
 
+.spin-slow {
+  animation: spin 1.6s linear infinite;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>
