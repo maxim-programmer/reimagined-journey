@@ -17,6 +17,81 @@
         <p class="hero__desc">Загружайте документы PDF и DOCX — система извлечёт текст и проиндексирует его для мгновенного полнотекстового поиска.</p>
       </div>
 
+      <section class="search-section">
+        <div class="search-bar">
+          <div class="search-bar__input-wrap">
+            <svg class="search-bar__icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/>
+              <line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <input
+              v-model="searchQuery"
+              class="search-bar__input"
+              type="text"
+              placeholder="Введите поисковый запрос…"
+              @keydown.enter="onSearch"
+            />
+            <button
+              v-if="searchQuery"
+              class="search-bar__clear"
+              @click="clearSearch"
+              title="Очистить"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <button
+            class="search-bar__btn"
+            :disabled="isSearching || !searchQuery.trim()"
+            @click="onSearch"
+          >
+            <svg v-if="isSearching" class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" stroke-dasharray="28 56" stroke-linecap="round"/>
+            </svg>
+            <span>{{ isSearching ? 'Поиск…' : 'Найти' }}</span>
+          </button>
+        </div>
+
+        <div v-if="searchError" class="search-error">
+          {{ searchError }}
+        </div>
+
+        <div v-if="searchDone" class="search-results">
+          <div class="search-results__header">
+            <span class="search-results__label">
+              {{ searchHits.length > 0 ? `Найдено фрагментов: ${searchHits.length}` : 'Ничего не найдено' }}
+            </span>
+            <span v-if="lastQuery" class="search-results__query">«{{ lastQuery }}»</span>
+          </div>
+
+          <ul v-if="searchHits.length > 0" class="search-hits">
+            <li
+              v-for="(hit, index) in searchHits"
+              :key="hit.chunk_id || index"
+              class="search-hit"
+            >
+              <div class="search-hit__meta">
+                <span class="search-hit__filename">{{ hit.file_name }}</span>
+                <span v-if="hit.page" class="search-hit__page">стр. {{ hit.page }}</span>
+                <span class="search-hit__score">релевантность: {{ hit.score.toFixed(2) }}</span>
+              </div>
+              <p class="search-hit__text">{{ hit.text }}</p>
+            </li>
+          </ul>
+
+          <div v-else class="search-empty">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/>
+              <line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <p>По вашему запросу ничего не найдено. Попробуйте изменить запрос.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="upload-section">
         <DropZone @files-selected="onFilesSelected" />
         <FileQueue
@@ -86,7 +161,7 @@
 <script>
 import DropZone from '../components/DropZone.vue'
 import FileQueue from '../components/FileQueue.vue'
-import { uploadDocument, listDocuments } from '../api/documents.js'
+import { uploadDocument, listDocuments, searchDocuments } from '../api/documents.js'
 
 let idCounter = 0
 
@@ -99,6 +174,12 @@ export default {
       fileQueue: [],
       uploadedDocs: [],
       isUploading: false,
+      searchQuery: '',
+      isSearching: false,
+      searchHits: [],
+      searchDone: false,
+      searchError: '',
+      lastQuery: '',
     }
   },
 
@@ -113,6 +194,34 @@ export default {
       } catch {
         this.uploadedDocs = []
       }
+    },
+
+    async onSearch() {
+      const query = this.searchQuery.trim()
+      if (!query || this.isSearching) return
+
+      this.isSearching = true
+      this.searchError = ''
+      this.searchDone = false
+      this.searchHits = []
+
+      try {
+        this.searchHits = await searchDocuments(query)
+        this.lastQuery = query
+        this.searchDone = true
+      } catch (err) {
+        this.searchError = err.message
+      } finally {
+        this.isSearching = false
+      }
+    },
+
+    clearSearch() {
+      this.searchQuery = ''
+      this.searchHits = []
+      this.searchDone = false
+      this.searchError = ''
+      this.lastQuery = ''
     },
 
     onFilesSelected(files) {
@@ -255,6 +364,201 @@ export default {
   max-width: 540px;
 }
 
+.search-section {
+  margin-bottom: 48px;
+}
+
+.search-bar {
+  display: flex;
+  gap: 10px;
+}
+
+.search-bar__input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.search-bar__icon {
+  position: absolute;
+  left: 14px;
+  color: #4a5070;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.search-bar__input {
+  width: 100%;
+  background: #161a27;
+  border: 1.5px solid #2e3347;
+  border-radius: 10px;
+  padding: 11px 40px 11px 42px;
+  font-size: 14px;
+  color: #e8eaf0;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-bar__input::placeholder {
+  color: #4a5070;
+}
+
+.search-bar__input:focus {
+  border-color: #4f6ef7;
+}
+
+.search-bar__clear {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #4a5070;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+.search-bar__clear:hover {
+  color: #e8eaf0;
+}
+
+.search-bar__btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 22px;
+  background: #4f6ef7;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.search-bar__btn:not(:disabled):hover {
+  background: #3d5ce8;
+}
+
+.search-bar__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.search-error {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #e05c5c;
+  padding: 10px 14px;
+  background: rgba(224, 92, 92, 0.08);
+  border: 1px solid rgba(224, 92, 92, 0.2);
+  border-radius: 8px;
+}
+
+.search-results {
+  margin-top: 16px;
+}
+
+.search-results__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.search-results__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7b82a0;
+}
+
+.search-results__query {
+  font-size: 13px;
+  color: #4a5070;
+}
+
+.search-hits {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.search-hit {
+  background: #161a27;
+  border: 1px solid #232840;
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color 0.15s;
+}
+
+.search-hit:hover {
+  border-color: #4f6ef7;
+}
+
+.search-hit__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.search-hit__filename {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4f6ef7;
+}
+
+.search-hit__page {
+  font-size: 12px;
+  color: #7b82a0;
+  background: #1e2236;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.search-hit__score {
+  font-size: 11px;
+  color: #4a5070;
+  margin-left: auto;
+}
+
+.search-hit__text {
+  font-size: 13px;
+  color: #c0c4d6;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 36px 0;
+  color: #4a5070;
+  text-align: center;
+}
+
+.search-empty p {
+  font-size: 14px;
+  color: #4a5070;
+  max-width: 340px;
+}
+
 .upload-section {
   margin-bottom: 48px;
 }
@@ -390,5 +694,13 @@ export default {
 .badge--error {
   color: #e05c5c;
   background: rgba(224, 92, 92, 0.12);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
