@@ -33,21 +33,51 @@
           <h2 class="docs-section__title">Загруженные документы</h2>
           <span class="docs-section__count">{{ uploadedDocs.length }}</span>
         </div>
-        <ul class="docs-list">
-          <li v-for="doc in uploadedDocs" :key="doc.id" class="doc-card">
-            <div class="doc-card__icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                <polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-              </svg>
-            </div>
-            <div class="doc-card__info">
-              <span class="doc-card__name">{{ doc.file_name }}</span>
-              <span class="doc-card__meta">{{ formatSize(doc.file_size) }} · {{ formatDate(doc.uploaded_at) }}</span>
-            </div>
-            <span class="doc-card__badge">{{ doc.mime_type === 'application/pdf' ? 'PDF' : 'DOCX' }}</span>
-          </li>
-        </ul>
+
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead>
+              <tr>
+                <th class="docs-table__th">Название</th>
+                <th class="docs-table__th docs-table__th--center">Тип</th>
+                <th class="docs-table__th">Дата загрузки</th>
+                <th class="docs-table__th docs-table__th--center">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="doc in uploadedDocs"
+                :key="doc.id"
+                class="docs-table__row"
+              >
+                <td class="docs-table__td">
+                  <div class="doc-name-cell">
+                    <span class="doc-name-cell__icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                        <polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="doc-name-cell__name" :title="doc.file_name">{{ doc.file_name }}</span>
+                  </div>
+                </td>
+                <td class="docs-table__td docs-table__td--center">
+                  <span class="badge badge--type">
+                    {{ doc.mime_type === 'application/pdf' ? 'PDF' : 'DOCX' }}
+                  </span>
+                </td>
+                <td class="docs-table__td docs-table__td--date">
+                  {{ formatDate(doc.uploaded_at) }}
+                </td>
+                <td class="docs-table__td docs-table__td--center">
+                  <span class="badge" :class="statusBadgeClass(doc.status)">
+                    {{ statusLabel(doc.status) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </main>
   </div>
@@ -140,10 +170,24 @@ export default {
       return new Promise((resolve) => setTimeout(resolve, 800))
     },
 
-    formatSize(bytes) {
-      if (bytes < 1024) return bytes + ' Б'
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ'
-      return (bytes / (1024 * 1024)).toFixed(1) + ' МБ'
+    statusLabel(status) {
+      const map = {
+        uploaded: 'Загружен',
+        processing: 'Обработка',
+        indexed: 'Индексирован',
+        error: 'Ошибка',
+      }
+      return map[status] ?? status
+    },
+
+    statusBadgeClass(status) {
+      const map = {
+        uploaded: 'badge--uploaded',
+        processing: 'badge--processing',
+        indexed: 'badge--indexed',
+        error: 'badge--error',
+      }
+      return map[status] ?? 'badge--uploaded'
     },
 
     formatDate(iso) {
@@ -236,62 +280,115 @@ export default {
   border-radius: 20px;
 }
 
-.docs-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.docs-table-wrap {
+  border: 1px solid #232840;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.doc-card {
+.docs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.docs-table__th {
+  padding: 11px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7b82a0;
+  background: #161a27;
+  border-bottom: 1px solid #232840;
+}
+
+.docs-table__th--center {
+  text-align: center;
+}
+
+.docs-table__row {
+  background: #161a27;
+  transition: background 0.15s;
+}
+
+.docs-table__row:not(:last-child) {
+  border-bottom: 1px solid #1e2236;
+}
+
+.docs-table__row:hover {
+  background: #1b2035;
+}
+
+.docs-table__td {
+  padding: 12px 16px;
+  color: #e8eaf0;
+  vertical-align: middle;
+}
+
+.docs-table__td--center {
+  text-align: center;
+}
+
+.docs-table__td--date {
+  color: #7b82a0;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.doc-name-cell {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  background: #161a27;
-  border: 1px solid #232840;
-  border-radius: 10px;
-  transition: border-color 0.15s;
+  gap: 10px;
+  min-width: 0;
 }
 
-.doc-card:hover {
-  border-color: #2e3347;
-}
-
-.doc-card__icon {
+.doc-name-cell__icon {
   color: #4f6ef7;
   flex-shrink: 0;
-}
-
-.doc-card__info {
-  flex: 1;
-  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
 }
 
-.doc-card__name {
-  font-size: 14px;
-  color: #e8eaf0;
+.doc-name-cell__name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 280px;
 }
 
-.doc-card__meta {
-  font-size: 12px;
-  color: #4a5070;
-}
-
-.doc-card__badge {
+.badge {
+  display: inline-block;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.badge--type {
   color: #4f6ef7;
   background: rgba(79, 110, 247, 0.12);
-  padding: 3px 8px;
-  border-radius: 6px;
-  flex-shrink: 0;
+}
+
+.badge--uploaded {
+  color: #7b82a0;
+  background: rgba(123, 130, 160, 0.12);
+}
+
+.badge--processing {
+  color: #f7a24f;
+  background: rgba(247, 162, 79, 0.12);
+}
+
+.badge--indexed {
+  color: #3ec97a;
+  background: rgba(62, 201, 122, 0.12);
+}
+
+.badge--error {
+  color: #e05c5c;
+  background: rgba(224, 92, 92, 0.12);
 }
 </style>
