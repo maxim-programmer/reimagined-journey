@@ -13,6 +13,7 @@ type Config struct {
 	UploadDir        string
 	ElasticsearchURL string
 	RedisAddr        string
+	RedisPassword    string
 }
 
 func Load() *Config {
@@ -26,6 +27,7 @@ func Load() *Config {
 		UploadDir:        getEnv("UPLOAD_DIR", "./uploads"),
 		ElasticsearchURL: getEnv("ELASTICSEARCH_URL", "http://localhost:9200"),
 		RedisAddr:        getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:    getEnv("REDIS_PASSWORD", ""),
 	}
 }
 

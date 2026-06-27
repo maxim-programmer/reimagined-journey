@@ -36,7 +36,7 @@ func main() {
 		log.Fatalf("failed to ensure elasticsearch index: %v", err)
 	}
 
-	redisCache := cache.NewRedisCache(cfg.RedisAddr)
+	redisCache := cache.NewRedisCache(cfg.RedisAddr, cfg.RedisPassword)
 	if err := redisCache.Ping(context.Background()); err != nil {
 		log.Fatalf("failed to connect to redis: %v", err)
 	}
