@@ -42,17 +42,49 @@ func main() {
 	}
 	log.Printf("connected to redis at %s", cfg.RedisAddr)
 
+	userRepo := repository.NewUserRepository(db)
 	docRepo := repository.NewDocumentRepository(db)
 	chunkRepo := repository.NewChunkRepository(db)
-	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient, redisCache)
+	historyRepo := repository.NewSearchHistoryRepository(db)
+
+	authSvc := service.NewAuthService(userRepo, redisCache)
+	historySvc := service.NewSearchHistoryService(historyRepo)
+	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient, redisCache, historyRepo)
+
+	authHandler := handler.NewAuthHandler(authSvc)
 	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
+	historyHandler := handler.NewSearchHistoryHandler(historySvc)
+
+	authMw := middleware.Auth(redisCache)
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("POST /api/v1/documents/upload", docHandler.Upload)
-	mux.HandleFunc("GET /api/v1/documents", docHandler.List)
-	mux.HandleFunc("GET /api/v1/documents/{id}", docHandler.Get)
-	mux.HandleFunc("GET /api/v1/search", docHandler.Search)
+	mux.HandleFunc("POST /api/v1/auth/register", authHandler.Register)
+	mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
+	mux.HandleFunc("POST /api/v1/auth/logout", authHandler.Logout)
+	mux.HandleFunc("GET /api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(authHandler.Me)).ServeHTTP(w, r)
+	})
+
+	mux.HandleFunc("POST /api/v1/documents/upload", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(docHandler.Upload)).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("GET /api/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(docHandler.List)).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("GET /api/v1/documents/{id}", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(docHandler.Get)).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("GET /api/v1/search", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(docHandler.Search)).ServeHTTP(w, r)
+	})
+
+	mux.HandleFunc("GET /api/v1/history", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(historyHandler.List)).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("DELETE /api/v1/history", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(historyHandler.Clear)).ServeHTTP(w, r)
+	})
 
 	mux.HandleFunc("GET /api/openapi.yaml", serveOpenAPISpec)
 	mux.HandleFunc("GET /docs", serveSwaggerUI)

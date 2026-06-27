@@ -1,15 +1,46 @@
 <template>
   <div id="app">
-    <HomePage />
+    <LoginPage v-if="!user" @authenticated="onAuthenticated" />
+    <HomePage v-else :user="user" @logout="onLogout" />
   </div>
 </template>
 
 <script>
+import LoginPage from './pages/LoginPage.vue'
 import HomePage from './pages/HomePage.vue'
+import { getMe } from './api/documents.js'
 
 export default {
   name: 'App',
-  components: { HomePage },
+  components: { LoginPage, HomePage },
+
+  data() {
+    return {
+      user: null,
+    }
+  },
+
+  async created() {
+    const token = localStorage.getItem('kb_token')
+    if (token) {
+      const user = await getMe()
+      if (user) {
+        this.user = user
+      } else {
+        localStorage.removeItem('kb_token')
+      }
+    }
+  },
+
+  methods: {
+    onAuthenticated(user) {
+      this.user = user
+    },
+
+    onLogout() {
+      this.user = null
+    },
+  },
 }
 </script>
 

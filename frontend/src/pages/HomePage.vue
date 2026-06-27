@@ -9,6 +9,10 @@
         </svg>
         <span class="logo__text">KnowledgeBase</span>
       </div>
+      <div class="header-right">
+        <span class="header-user">{{ user.login }}</span>
+        <button class="btn-logout" @click="onLogout">Выйти</button>
+      </div>
     </header>
 
     <main class="page__main">
@@ -30,6 +34,8 @@
               type="text"
               placeholder="Введите поисковый запрос…"
               @keydown.enter="onSearch"
+              @focus="showHistory = history.length > 0"
+              @blur="onSearchBlur"
             />
             <button
               v-if="searchQuery"
@@ -42,6 +48,29 @@
                 <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
               </svg>
             </button>
+
+            <div v-if="showHistory && history.length > 0" class="search-history-dropdown">
+              <div class="search-history-dropdown__header">
+                <span class="search-history-dropdown__label">История поиска</span>
+                <button class="search-history-dropdown__clear" @mousedown.prevent="onClearHistory">
+                  Очистить
+                </button>
+              </div>
+              <ul class="search-history-dropdown__list">
+                <li
+                  v-for="item in history"
+                  :key="item.id"
+                  class="search-history-dropdown__item"
+                  @mousedown.prevent="pickHistory(item.query)"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
+                    <polyline points="12 7 12 12 15 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  </svg>
+                  <span>{{ item.query }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
           <button
             class="search-bar__btn"
@@ -133,7 +162,6 @@
                 <polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
-
             <div class="pagination__pages">
               <button
                 v-for="page in visiblePages"
@@ -149,7 +177,6 @@
                 {{ page }}
               </button>
             </div>
-
             <button
               class="pagination__btn"
               :disabled="currentPage === totalPages"
@@ -241,7 +268,7 @@
 <script>
 import DropZone from '../components/DropZone.vue'
 import FileQueue from '../components/FileQueue.vue'
-import { uploadDocument, listDocuments, searchDocuments } from '../api/documents.js'
+import { uploadDocument, listDocuments, searchDocuments, getSearchHistory, clearSearchHistory, logout } from '../api/documents.js'
 
 const PAGE_SIZE = 10
 let idCounter = 0
@@ -249,6 +276,14 @@ let idCounter = 0
 export default {
   name: 'HomePage',
   components: { DropZone, FileQueue },
+  emits: ['logout'],
+
+  props: {
+    user: {
+      type: Object,
+      required: true,
+    },
+  },
 
   data() {
     return {
@@ -262,6 +297,8 @@ export default {
       searchError: '',
       lastQuery: '',
       currentPage: 1,
+      history: [],
+      showHistory: false,
     }
   },
 
@@ -304,7 +341,7 @@ export default {
   },
 
   async created() {
-    await this.fetchDocs()
+    await Promise.all([this.fetchDocs(), this.fetchHistory()])
   },
 
   methods: {
@@ -316,10 +353,19 @@ export default {
       }
     },
 
+    async fetchHistory() {
+      try {
+        this.history = await getSearchHistory()
+      } catch {
+        this.history = []
+      }
+    },
+
     async onSearch() {
       const query = this.searchQuery.trim()
       if (!query || this.isSearching) return
 
+      this.showHistory = false
       this.isSearching = true
       this.searchError = ''
       this.searchDone = false
@@ -330,6 +376,7 @@ export default {
         this.searchHits = await searchDocuments(query)
         this.lastQuery = query
         this.searchDone = true
+        await this.fetchHistory()
       } catch (err) {
         this.searchError = err.message
       } finally {
@@ -344,6 +391,25 @@ export default {
       this.searchError = ''
       this.lastQuery = ''
       this.currentPage = 1
+      this.showHistory = false
+    },
+
+    onSearchBlur() {
+      setTimeout(() => { this.showHistory = false }, 150)
+    },
+
+    pickHistory(query) {
+      this.searchQuery = query
+      this.showHistory = false
+      this.onSearch()
+    },
+
+    async onClearHistory() {
+      try {
+        await clearSearchHistory()
+        this.history = []
+        this.showHistory = false
+      } catch {}
     },
 
     goToPage(page) {
@@ -355,11 +421,7 @@ export default {
 
     highlight(text) {
       if (!this.lastQuery || !text) return this.escapeHtml(text)
-      const words = this.lastQuery
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((w) => this.escapeRegex(w))
+      const words = this.lastQuery.trim().split(/\s+/).filter(Boolean).map((w) => this.escapeRegex(w))
       if (words.length === 0) return this.escapeHtml(text)
       const pattern = new RegExp(`(${words.join('|')})`, 'gi')
       return this.escapeHtml(text).replace(pattern, '<mark class="search-highlight">$1</mark>')
@@ -390,12 +452,7 @@ export default {
           (f) => f.file.name === file.name && f.file.size === file.size,
         )
         if (!alreadyQueued) {
-          this.fileQueue.push({
-            id: ++idCounter,
-            file,
-            status: 'pending',
-            error: '',
-          })
+          this.fileQueue.push({ id: ++idCounter, file, status: 'pending', error: '' })
         }
       }
     },
@@ -422,7 +479,7 @@ export default {
       try {
         await uploadDocument(item.file)
         item.status = 'indexing'
-        await this.simulateIndexing()
+        await new Promise((resolve) => setTimeout(resolve, 800))
         item.status = 'done'
       } catch (err) {
         item.status = 'error'
@@ -430,36 +487,23 @@ export default {
       }
     },
 
-    simulateIndexing() {
-      return new Promise((resolve) => setTimeout(resolve, 800))
+    async onLogout() {
+      await logout()
+      this.$emit('logout')
     },
 
     statusLabel(status) {
-      const map = {
-        uploaded: 'Загружен',
-        processing: 'Обработка',
-        indexed: 'Индексирован',
-        error: 'Ошибка',
-      }
+      const map = { uploaded: 'Загружен', processing: 'Обработка', indexed: 'Индексирован', error: 'Ошибка' }
       return map[status] ?? status
     },
 
     statusBadgeClass(status) {
-      const map = {
-        uploaded: 'badge--uploaded',
-        processing: 'badge--processing',
-        indexed: 'badge--indexed',
-        error: 'badge--error',
-      }
+      const map = { uploaded: 'badge--uploaded', processing: 'badge--processing', indexed: 'badge--indexed', error: 'badge--error' }
       return map[status] ?? 'badge--uploaded'
     },
 
     formatDate(iso) {
-      return new Date(iso).toLocaleDateString('ru-RU', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      })
+      return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })
     },
   },
 }
@@ -477,6 +521,7 @@ export default {
   border-bottom: 1px solid #1e2236;
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .logo {
@@ -490,6 +535,34 @@ export default {
   font-weight: 700;
   color: #e8eaf0;
   letter-spacing: -0.02em;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-user {
+  font-size: 13px;
+  color: #7b82a0;
+}
+
+.btn-logout {
+  background: none;
+  border: 1px solid #2e3347;
+  border-radius: 8px;
+  color: #7b82a0;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-logout:hover {
+  border-color: #e05c5c;
+  color: #e05c5c;
 }
 
 .page__main {
@@ -541,6 +614,7 @@ export default {
   color: #4a5070;
   pointer-events: none;
   flex-shrink: 0;
+  z-index: 1;
 }
 
 .search-bar__input {
@@ -577,6 +651,7 @@ export default {
   align-items: center;
   justify-content: center;
   transition: color 0.15s;
+  z-index: 1;
 }
 
 .search-bar__clear:hover {
@@ -607,6 +682,77 @@ export default {
 .search-bar__btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.search-history-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #1e2236;
+  border: 1px solid #2e3347;
+  border-radius: 10px;
+  z-index: 100;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.search-history-dropdown__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #2e3347;
+}
+
+.search-history-dropdown__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5070;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.search-history-dropdown__clear {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: #4a5070;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.search-history-dropdown__clear:hover {
+  color: #e05c5c;
+}
+
+.search-history-dropdown__list {
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.search-history-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #c0c4d6;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.search-history-dropdown__item:hover {
+  background: #232840;
+}
+
+.search-history-dropdown__item svg {
+  color: #4a5070;
+  flex-shrink: 0;
 }
 
 .search-error {
@@ -653,7 +799,6 @@ export default {
   background: #161a27;
   border: 1px solid #232840;
   border-radius: 12px;
-  padding: 0;
   overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -922,9 +1067,7 @@ export default {
   white-space: nowrap;
 }
 
-.docs-table__th--center {
-  text-align: center;
-}
+.docs-table__th--center { text-align: center; }
 
 .docs-table__row {
   background: #161a27;
@@ -935,9 +1078,7 @@ export default {
   border-bottom: 1px solid #1e2236;
 }
 
-.docs-table__row:hover {
-  background: #1b2035;
-}
+.docs-table__row:hover { background: #1b2035; }
 
 .docs-table__td {
   padding: 12px 16px;
@@ -945,9 +1086,7 @@ export default {
   vertical-align: middle;
 }
 
-.docs-table__td--center {
-  text-align: center;
-}
+.docs-table__td--center { text-align: center; }
 
 .docs-table__td--date {
   color: #7b82a0;
@@ -985,145 +1124,50 @@ export default {
   white-space: nowrap;
 }
 
-.badge--type {
-  color: #4f6ef7;
-  background: rgba(79, 110, 247, 0.12);
-}
+.badge--type { color: #4f6ef7; background: rgba(79, 110, 247, 0.12); }
+.badge--uploaded { color: #7b82a0; background: rgba(123, 130, 160, 0.12); }
+.badge--processing { color: #f7a24f; background: rgba(247, 162, 79, 0.12); }
+.badge--indexed { color: #3ec97a; background: rgba(62, 201, 122, 0.12); }
+.badge--error { color: #e05c5c; background: rgba(224, 92, 92, 0.12); }
 
-.badge--uploaded {
-  color: #7b82a0;
-  background: rgba(123, 130, 160, 0.12);
-}
+.spin { animation: spin 0.9s linear infinite; }
 
-.badge--processing {
-  color: #f7a24f;
-  background: rgba(247, 162, 79, 0.12);
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.badge--indexed {
-  color: #3ec97a;
-  background: rgba(62, 201, 122, 0.12);
-}
-
-.badge--error {
-  color: #e05c5c;
-  background: rgba(224, 92, 92, 0.12);
-}
-
-.spin {
-  animation: spin 0.9s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── 1280px+ : широкий контент ── */
 @media (min-width: 1280px) {
-  .page__main {
-    max-width: 960px;
-  }
-
-  .hero__title {
-    font-size: 40px;
-  }
-
-  .doc-name-cell__name {
-    max-width: 480px;
-  }
+  .page__main { max-width: 960px; }
+  .hero__title { font-size: 40px; }
+  .doc-name-cell__name { max-width: 480px; }
 }
 
-/* ── 1920px+ : очень широкий экран ── */
 @media (min-width: 1920px) {
-  .page__main {
-    max-width: 1200px;
-  }
+  .page__main { max-width: 1200px; }
 }
 
-/* ── 768px и меньше: планшет/мобайл ── */
 @media (max-width: 768px) {
-  .page__header {
-    padding: 14px 16px;
-  }
-
-  .page__main {
-    padding: 32px 16px 60px;
-  }
-
-  .hero {
-    margin-bottom: 28px;
-  }
-
-  .hero__title {
-    font-size: 24px;
-  }
-
-  .hero__desc {
-    font-size: 14px;
-  }
-
-  .search-bar {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .search-bar__btn {
-    padding: 11px 20px;
-    justify-content: center;
-  }
-
-  .docs-table__th--hide-sm,
-  .docs-table__td--hide-sm {
-    display: none;
-  }
-
-  .doc-name-cell__name {
-    max-width: 160px;
-  }
+  .page__header { padding: 14px 16px; }
+  .page__main { padding: 32px 16px 60px; }
+  .hero { margin-bottom: 28px; }
+  .hero__title { font-size: 24px; }
+  .hero__desc { font-size: 14px; }
+  .search-bar { flex-direction: column; gap: 8px; }
+  .search-bar__btn { padding: 11px 20px; justify-content: center; }
+  .docs-table__th--hide-sm, .docs-table__td--hide-sm { display: none; }
+  .doc-name-cell__name { max-width: 160px; }
+  .header-user { display: none; }
 }
 
-/* ── 480px и меньше: маленький телефон ── */
 @media (max-width: 480px) {
-  .hero__title {
-    font-size: 20px;
-  }
-
-  .hit-card__header {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .pagination__pages {
-    gap: 2px;
-  }
-
-  .pagination__page,
-  .pagination__btn {
-    min-width: 32px;
-    width: 32px;
-    height: 32px;
-    font-size: 12px;
-  }
+  .hero__title { font-size: 20px; }
+  .hit-card__header { flex-wrap: wrap; gap: 8px; }
+  .pagination__page, .pagination__btn { min-width: 32px; width: 32px; height: 32px; font-size: 12px; }
 }
 
-/* ── 320px: минимальный поддерживаемый размер ── */
 @media (max-width: 360px) {
-  .page__main {
-    padding: 24px 12px 48px;
-  }
-
-  .search-bar__input {
-    font-size: 13px;
-    padding: 10px 36px 10px 38px;
-  }
-
-  .hit-card__text {
-    font-size: 12px;
-  }
-
-  .doc-name-cell__name {
-    max-width: 100px;
-  }
+  .page__main { padding: 24px 12px 48px; }
+  .search-bar__input { font-size: 13px; padding: 10px 36px 10px 38px; }
+  .hit-card__text { font-size: 12px; }
+  .doc-name-cell__name { max-width: 100px; }
 }
 </style>
 

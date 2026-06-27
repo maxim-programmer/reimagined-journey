@@ -54,6 +54,35 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, ttl time.Du
 	return nil
 }
 
+func (c *RedisCache) SetSession(ctx context.Context, token, userID string, ttl time.Duration) error {
+	if err := c.client.Set(ctx, sessionKey(token), userID, ttl).Err(); err != nil {
+		return fmt.Errorf("redis set session: %w", err)
+	}
+	return nil
+}
+
+func (c *RedisCache) GetSession(ctx context.Context, token string) (string, error) {
+	val, err := c.client.Get(ctx, sessionKey(token)).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis get session: %w", err)
+	}
+	return val, nil
+}
+
+func (c *RedisCache) DeleteSession(ctx context.Context, token string) error {
+	if err := c.client.Del(ctx, sessionKey(token)).Err(); err != nil {
+		return fmt.Errorf("redis delete session: %w", err)
+	}
+	return nil
+}
+
 func SearchKey(query string) string {
 	return fmt.Sprintf("search:%s", query)
+}
+
+func sessionKey(token string) string {
+	return fmt.Sprintf("session:%s", token)
 }

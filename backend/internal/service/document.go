@@ -26,18 +26,20 @@ type chunkRepo interface {
 }
 
 type DocumentService struct {
-	repo      documentRepo
-	chunkRepo chunkRepo
-	esClient  *elastic.Client
-	cache     *cache.RedisCache
+	repo        documentRepo
+	chunkRepo   chunkRepo
+	esClient    *elastic.Client
+	cache       *cache.RedisCache
+	historyRepo searchHistoryRepo
 }
 
-func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elastic.Client, redisCache *cache.RedisCache) *DocumentService {
+func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elastic.Client, redisCache *cache.RedisCache, historyRepo searchHistoryRepo) *DocumentService {
 	return &DocumentService{
-		repo:      repo,
-		chunkRepo: chunkRepo,
-		esClient:  esClient,
-		cache:     redisCache,
+		repo:        repo,
+		chunkRepo:   chunkRepo,
+		esClient:    esClient,
+		cache:       redisCache,
+		historyRepo: historyRepo,
 	}
 }
 
@@ -107,7 +109,7 @@ func (s *DocumentService) GetDocument(ctx context.Context, id string) (*model.Do
 	return doc, nil
 }
 
-func (s *DocumentService) Search(ctx context.Context, query string) ([]elastic.SearchHit, error) {
+func (s *DocumentService) Search(ctx context.Context, query, userID string) ([]elastic.SearchHit, error) {
 	if query == "" {
 		return []elastic.SearchHit{}, nil
 	}
@@ -119,18 +121,25 @@ func (s *DocumentService) Search(ctx context.Context, query string) ([]elastic.S
 	if err != nil {
 		log.Printf("cache get warning for query %q: %v", query, err)
 	}
+
+	var hits []elastic.SearchHit
 	if hit {
 		log.Printf("cache hit for query %q", query)
-		return cached, nil
+		hits = cached
+	} else {
+		hits, err = s.esClient.Search(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("search: %w", err)
+		}
+		if setErr := s.cache.Set(ctx, cacheKey, hits, cache.SearchTTL); setErr != nil {
+			log.Printf("cache set warning for query %q: %v", query, setErr)
+		}
 	}
 
-	hits, err := s.esClient.Search(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
-	}
-
-	if setErr := s.cache.Set(ctx, cacheKey, hits, cache.SearchTTL); setErr != nil {
-		log.Printf("cache set warning for query %q: %v", query, setErr)
+	if userID != "" && s.historyRepo != nil {
+		if addErr := s.historyRepo.Add(ctx, userID, query); addErr != nil {
+			log.Printf("history add warning for user %s: %v", userID, addErr)
+		}
 	}
 
 	return hits, nil

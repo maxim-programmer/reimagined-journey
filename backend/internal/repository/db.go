@@ -20,6 +20,18 @@ func NewDB(databaseURL string) (*pgxpool.Pool, error) {
 
 func RunMigrations(ctx context.Context, db *pgxpool.Pool) error {
 	_, err := db.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS users (
+			id            TEXT PRIMARY KEY,
+			login         TEXT        NOT NULL UNIQUE,
+			password_hash TEXT        NOT NULL,
+			created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create table users: %w", err)
+	}
+
+	_, err = db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS documents (
 			id             TEXT PRIMARY KEY,
 			file_name      TEXT        NOT NULL,
@@ -67,6 +79,25 @@ func RunMigrations(ctx context.Context, db *pgxpool.Pool) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("create index document_chunks: %w", err)
+	}
+
+	_, err = db.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS search_history (
+			id         BIGSERIAL   PRIMARY KEY,
+			user_id    TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			query      TEXT        NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create table search_history: %w", err)
+	}
+
+	_, err = db.Exec(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_search_history_user_id ON search_history(user_id)
+	`)
+	if err != nil {
+		return fmt.Errorf("create index search_history: %w", err)
 	}
 
 	return nil

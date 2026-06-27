@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/elastic"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/middleware"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/model"
 )
 
@@ -31,7 +32,7 @@ type documentService interface {
 	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error)
 	ListDocuments(ctx context.Context) ([]model.Document, error)
 	GetDocument(ctx context.Context, id string) (*model.Document, error)
-	Search(ctx context.Context, query string) ([]elastic.SearchHit, error)
+	Search(ctx context.Context, query, userID string) ([]elastic.SearchHit, error)
 }
 
 type DocumentHandler struct {
@@ -186,7 +187,9 @@ func (h *DocumentHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hits, err := h.svc.Search(r.Context(), query)
+	userID := middleware.UserIDFromContext(r.Context())
+
+	hits, err := h.svc.Search(r.Context(), query, userID)
 	if err != nil {
 		log.Printf("search error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to perform search")
