@@ -67,9 +67,9 @@
             <span v-if="lastQuery" class="search-results__query">«{{ lastQuery }}»</span>
           </div>
 
-          <ul v-if="searchHits.length > 0" class="search-hits">
+          <ul v-if="pagedHits.length > 0" class="search-hits">
             <li
-              v-for="(hit, index) in searchHits"
+              v-for="(hit, index) in pagedHits"
               :key="hit.chunk_id || index"
               class="hit-card"
             >
@@ -108,7 +108,7 @@
                 </div>
               </div>
 
-              <p class="hit-card__text">{{ hit.text }}</p>
+              <p class="hit-card__text" v-html="highlight(hit.text)"></p>
 
               <div class="hit-card__footer">
                 <span class="hit-card__relevance-label">Релевантность</span>
@@ -122,12 +122,52 @@
             </li>
           </ul>
 
-          <div v-else class="search-empty">
+          <div v-if="searchHits.length > 0" class="pagination">
+            <button
+              class="pagination__btn"
+              :disabled="currentPage === 1"
+              @click="goToPage(currentPage - 1)"
+              title="Предыдущая страница"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <div class="pagination__pages">
+              <button
+                v-for="page in visiblePages"
+                :key="page"
+                class="pagination__page"
+                :class="{
+                  'pagination__page--active': page === currentPage,
+                  'pagination__page--ellipsis': page === '…',
+                }"
+                :disabled="page === '…'"
+                @click="page !== '…' && goToPage(page)"
+              >
+                {{ page }}
+              </button>
+            </div>
+
+            <button
+              class="pagination__btn"
+              :disabled="currentPage === totalPages"
+              @click="goToPage(currentPage + 1)"
+              title="Следующая страница"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <polyline points="9 18 15 12 9 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div v-if="searchHits.length === 0" class="search-empty">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
               <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/>
               <line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <p>По вашему запросу ничего не найдено. Попробуйте изменить запрос.</p>
+            <p>По вашему запросу ничего не найдено. Попробуйте изменить формулировку.</p>
           </div>
         </div>
       </section>
@@ -155,7 +195,7 @@
               <tr>
                 <th class="docs-table__th">Название</th>
                 <th class="docs-table__th docs-table__th--center">Тип</th>
-                <th class="docs-table__th">Дата загрузки</th>
+                <th class="docs-table__th docs-table__th--hide-sm">Дата загрузки</th>
                 <th class="docs-table__th docs-table__th--center">Статус</th>
               </tr>
             </thead>
@@ -181,7 +221,7 @@
                     {{ doc.mime_type === 'application/pdf' ? 'PDF' : 'DOCX' }}
                   </span>
                 </td>
-                <td class="docs-table__td docs-table__td--date">
+                <td class="docs-table__td docs-table__td--date docs-table__td--hide-sm">
                   {{ formatDate(doc.uploaded_at) }}
                 </td>
                 <td class="docs-table__td docs-table__td--center">
@@ -203,6 +243,7 @@ import DropZone from '../components/DropZone.vue'
 import FileQueue from '../components/FileQueue.vue'
 import { uploadDocument, listDocuments, searchDocuments } from '../api/documents.js'
 
+const PAGE_SIZE = 10
 let idCounter = 0
 
 export default {
@@ -220,7 +261,46 @@ export default {
       searchDone: false,
       searchError: '',
       lastQuery: '',
+      currentPage: 1,
     }
+  },
+
+  computed: {
+    totalPages() {
+      return Math.ceil(this.searchHits.length / PAGE_SIZE)
+    },
+
+    pagedHits() {
+      const start = (this.currentPage - 1) * PAGE_SIZE
+      return this.searchHits.slice(start, start + PAGE_SIZE)
+    },
+
+    visiblePages() {
+      const total = this.totalPages
+      const current = this.currentPage
+      if (total <= 7) {
+        return Array.from({ length: total }, (_, i) => i + 1)
+      }
+      const pages = []
+      if (current <= 4) {
+        for (let i = 1; i <= 5; i++) pages.push(i)
+        pages.push('…')
+        pages.push(total)
+      } else if (current >= total - 3) {
+        pages.push(1)
+        pages.push('…')
+        for (let i = total - 4; i <= total; i++) pages.push(i)
+      } else {
+        pages.push(1)
+        pages.push('…')
+        pages.push(current - 1)
+        pages.push(current)
+        pages.push(current + 1)
+        pages.push('…')
+        pages.push(total)
+      }
+      return pages
+    },
   },
 
   async created() {
@@ -244,6 +324,7 @@ export default {
       this.searchError = ''
       this.searchDone = false
       this.searchHits = []
+      this.currentPage = 1
 
       try {
         this.searchHits = await searchDocuments(query)
@@ -262,6 +343,39 @@ export default {
       this.searchDone = false
       this.searchError = ''
       this.lastQuery = ''
+      this.currentPage = 1
+    },
+
+    goToPage(page) {
+      if (page < 1 || page > this.totalPages) return
+      this.currentPage = page
+      const el = document.querySelector('.search-results')
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+
+    highlight(text) {
+      if (!this.lastQuery || !text) return this.escapeHtml(text)
+      const words = this.lastQuery
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => this.escapeRegex(w))
+      if (words.length === 0) return this.escapeHtml(text)
+      const pattern = new RegExp(`(${words.join('|')})`, 'gi')
+      return this.escapeHtml(text).replace(pattern, '<mark class="search-highlight">$1</mark>')
+    },
+
+    escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+    },
+
+    escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     },
 
     relevancePercent(score) {
@@ -297,13 +411,8 @@ export default {
     async uploadAll() {
       const pending = this.fileQueue.filter((f) => f.status === 'pending')
       if (pending.length === 0) return
-
       this.isUploading = true
-
-      await Promise.allSettled(
-        pending.map((item) => this.uploadOne(item)),
-      )
-
+      await Promise.allSettled(pending.map((item) => this.uploadOne(item)))
       this.isUploading = false
       await this.fetchDocs()
     },
@@ -519,6 +628,7 @@ export default {
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 
 .search-results__label {
@@ -662,6 +772,87 @@ export default {
   transition: width 0.4s ease;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.pagination__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: #161a27;
+  border: 1px solid #232840;
+  border-radius: 8px;
+  color: #7b82a0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.pagination__btn:not(:disabled):hover {
+  background: #1b2035;
+  border-color: #4f6ef7;
+  color: #e8eaf0;
+}
+
+.pagination__btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pagination__pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pagination__page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 6px;
+  background: #161a27;
+  border: 1px solid #232840;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #7b82a0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pagination__page:not(:disabled):not(.pagination__page--active):hover {
+  background: #1b2035;
+  border-color: #4f6ef7;
+  color: #e8eaf0;
+}
+
+.pagination__page--active {
+  background: #4f6ef7;
+  border-color: #4f6ef7;
+  color: #fff;
+  cursor: default;
+}
+
+.pagination__page--ellipsis {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+  color: #4a5070;
+}
+
 .search-empty {
   display: flex;
   flex-direction: column;
@@ -707,12 +898,15 @@ export default {
   border: 1px solid #232840;
   border-radius: 12px;
   overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .docs-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  min-width: 400px;
 }
 
 .docs-table__th {
@@ -725,6 +919,7 @@ export default {
   color: #7b82a0;
   background: #161a27;
   border-bottom: 1px solid #232840;
+  white-space: nowrap;
 }
 
 .docs-table__th--center {
@@ -821,5 +1016,122 @@ export default {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ── 1280px+ : широкий контент ── */
+@media (min-width: 1280px) {
+  .page__main {
+    max-width: 960px;
+  }
+
+  .hero__title {
+    font-size: 40px;
+  }
+
+  .doc-name-cell__name {
+    max-width: 480px;
+  }
+}
+
+/* ── 1920px+ : очень широкий экран ── */
+@media (min-width: 1920px) {
+  .page__main {
+    max-width: 1200px;
+  }
+}
+
+/* ── 768px и меньше: планшет/мобайл ── */
+@media (max-width: 768px) {
+  .page__header {
+    padding: 14px 16px;
+  }
+
+  .page__main {
+    padding: 32px 16px 60px;
+  }
+
+  .hero {
+    margin-bottom: 28px;
+  }
+
+  .hero__title {
+    font-size: 24px;
+  }
+
+  .hero__desc {
+    font-size: 14px;
+  }
+
+  .search-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .search-bar__btn {
+    padding: 11px 20px;
+    justify-content: center;
+  }
+
+  .docs-table__th--hide-sm,
+  .docs-table__td--hide-sm {
+    display: none;
+  }
+
+  .doc-name-cell__name {
+    max-width: 160px;
+  }
+}
+
+/* ── 480px и меньше: маленький телефон ── */
+@media (max-width: 480px) {
+  .hero__title {
+    font-size: 20px;
+  }
+
+  .hit-card__header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .pagination__pages {
+    gap: 2px;
+  }
+
+  .pagination__page,
+  .pagination__btn {
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+}
+
+/* ── 320px: минимальный поддерживаемый размер ── */
+@media (max-width: 360px) {
+  .page__main {
+    padding: 24px 12px 48px;
+  }
+
+  .search-bar__input {
+    font-size: 13px;
+    padding: 10px 36px 10px 38px;
+  }
+
+  .hit-card__text {
+    font-size: 12px;
+  }
+
+  .doc-name-cell__name {
+    max-width: 100px;
+  }
+}
+</style>
+
+<style>
+.search-highlight {
+  background-color: #f7c14f;
+  color: #0f1117;
+  border-radius: 2px;
+  padding: 0 2px;
 }
 </style>
