@@ -221,4 +221,34 @@ export default {
   pointer-events: none;
   max-width: 480px;
 }
+
+@media (max-width: 768px) {
+  .dropzone {
+    padding: 36px 20px;
+  }
+
+  .dropzone__title {
+    font-size: 16px;
+  }
+
+  .dropzone__icon svg {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 360px) {
+  .dropzone {
+    padding: 28px 12px;
+    border-radius: 12px;
+  }
+
+  .dropzone__title {
+    font-size: 14px;
+  }
+
+  .dropzone__hint {
+    font-size: 11px;
+  }
+}
 </style>
