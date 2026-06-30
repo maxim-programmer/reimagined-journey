@@ -32,11 +32,11 @@ type ChunkDocument struct {
 }
 
 type SearchHit struct {
-	ChunkID    string  `json:"chunk_id"`
-	FileName   string  `json:"file_name"`
-	Page       int     `json:"page"`
-	Text       string  `json:"text"`
-	Score      float64 `json:"score"`
+	ChunkID  string  `json:"chunk_id"`
+	FileName string  `json:"file_name"`
+	Page     int     `json:"page"`
+	Text     string  `json:"text"`
+	Score    float64 `json:"score"`
 }
 
 func (c *Client) EnsureIndex(ctx context.Context) error {
@@ -228,6 +228,42 @@ func (c *Client) Search(ctx context.Context, query string) ([]SearchHit, error) 
 	}
 
 	return hits, nil
+}
+
+func (c *Client) DeleteByDocument(ctx context.Context, documentID string) error {
+	body := map[string]any{
+		"query": map[string]any{
+			"term": map[string]any{
+				"document_id": documentID,
+			},
+		},
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal delete by query body: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/%s/_delete_by_query", c.baseURL, indexName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("create delete by query request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete by query request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errBody map[string]any
+		json.NewDecoder(resp.Body).Decode(&errBody)
+		return fmt.Errorf("delete by query failed with status %d: %v", resp.StatusCode, errBody)
+	}
+
+	return nil
 }
 
 func (c *Client) indexExists(ctx context.Context) (bool, error) {

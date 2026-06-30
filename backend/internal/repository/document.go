@@ -65,3 +65,14 @@ func (r *DocumentRepository) GetByID(ctx context.Context, id string) (*model.Doc
 	}
 	return &d, nil
 }
+
+func (r *DocumentRepository) Delete(ctx context.Context, id string) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM documents WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete document: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

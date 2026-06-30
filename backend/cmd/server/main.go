@@ -13,6 +13,7 @@ import (
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/config"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/elastic"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/handler"
+	"github.com/maxim-programmer/reimagined-journey/backend/internal/metrics"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/middleware"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/repository"
 	"github.com/maxim-programmer/reimagined-journey/backend/internal/service"
@@ -49,7 +50,7 @@ func main() {
 
 	authSvc := service.NewAuthService(userRepo, redisCache)
 	historySvc := service.NewSearchHistoryService(historyRepo)
-	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient, redisCache, historyRepo)
+	docSvc := service.NewDocumentService(docRepo, chunkRepo, esClient, redisCache, historyRepo, cfg.UploadDir)
 
 	authHandler := handler.NewAuthHandler(authSvc)
 	docHandler := handler.NewDocumentHandler(docSvc, cfg.UploadDir)
@@ -75,8 +76,11 @@ func main() {
 	mux.HandleFunc("GET /api/v1/documents/{id}", func(w http.ResponseWriter, r *http.Request) {
 		authMw(http.HandlerFunc(docHandler.Get)).ServeHTTP(w, r)
 	})
+	mux.HandleFunc("DELETE /api/v1/documents/{id}", func(w http.ResponseWriter, r *http.Request) {
+		authMw(http.HandlerFunc(docHandler.Delete)).ServeHTTP(w, r)
+	})
 	mux.HandleFunc("GET /api/v1/search", func(w http.ResponseWriter, r *http.Request) {
-		authMw(http.HandlerFunc(docHandler.Search)).ServeHTTP(w, r)
+		authMw(http.HandlerFunc(metrics.InstrumentSearch(docHandler.Search))).ServeHTTP(w, r)
 	})
 
 	mux.HandleFunc("GET /api/v1/history", func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +89,8 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/history", func(w http.ResponseWriter, r *http.Request) {
 		authMw(http.HandlerFunc(historyHandler.Clear)).ServeHTTP(w, r)
 	})
+
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	mux.HandleFunc("GET /api/openapi.yaml", serveOpenAPISpec)
 	mux.HandleFunc("GET /docs", serveSwaggerUI)

@@ -224,6 +224,7 @@
                 <th class="docs-table__th docs-table__th--center">Тип</th>
                 <th class="docs-table__th docs-table__th--hide-sm">Дата загрузки</th>
                 <th class="docs-table__th docs-table__th--center">Статус</th>
+                <th class="docs-table__th docs-table__th--center">Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -231,6 +232,7 @@
                 v-for="doc in uploadedDocs"
                 :key="doc.id"
                 class="docs-table__row"
+                :class="{ 'docs-table__row--deleting': deletingId === doc.id }"
               >
                 <td class="docs-table__td">
                   <div class="doc-name-cell">
@@ -256,26 +258,55 @@
                     {{ statusLabel(doc.status) }}
                   </span>
                 </td>
+                <td class="docs-table__td docs-table__td--center">
+                  <button
+                    class="doc-delete-btn"
+                    :disabled="deletingId === doc.id"
+                    @click="requestDelete(doc)"
+                    title="Удалить документ"
+                  >
+                    <svg v-if="deletingId !== doc.id" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      <line x1="10" y1="11" x2="10" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                      <line x1="14" y1="11" x2="14" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" class="spin">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" stroke-dasharray="28 56" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
     </main>
+
+    <ConfirmDialog
+      v-model="showDeleteConfirm"
+      title="Удаление документа"
+      :message="deleteConfirmMessage"
+      confirm-label="Удалить"
+      cancel-label="Отмена"
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
+    />
   </div>
 </template>
 
 <script>
 import DropZone from '../components/DropZone.vue'
 import FileQueue from '../components/FileQueue.vue'
-import { uploadDocument, listDocuments, searchDocuments, getSearchHistory, clearSearchHistory, logout } from '../api/documents.js'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { uploadDocument, listDocuments, deleteDocument, searchDocuments, getSearchHistory, clearSearchHistory, logout } from '../api/documents.js'
 
 const PAGE_SIZE = 10
 let idCounter = 0
 
 export default {
   name: 'HomePage',
-  components: { DropZone, FileQueue },
+  components: { DropZone, FileQueue, ConfirmDialog },
   emits: ['logout'],
 
   props: {
@@ -299,6 +330,9 @@ export default {
       currentPage: 1,
       history: [],
       showHistory: false,
+      showDeleteConfirm: false,
+      docPendingDelete: null,
+      deletingId: null,
     }
   },
 
@@ -337,6 +371,11 @@ export default {
         pages.push(total)
       }
       return pages
+    },
+
+    deleteConfirmMessage() {
+      if (!this.docPendingDelete) return ''
+      return `Вы действительно хотите удалить файл «${this.docPendingDelete.file_name}»? Это действие нельзя отменить.`
     },
   },
 
@@ -484,6 +523,31 @@ export default {
       } catch (err) {
         item.status = 'error'
         item.error = err.message
+      }
+    },
+
+    requestDelete(doc) {
+      this.docPendingDelete = doc
+      this.showDeleteConfirm = true
+    },
+
+    cancelDelete() {
+      this.docPendingDelete = null
+    },
+
+    async confirmDelete() {
+      const doc = this.docPendingDelete
+      if (!doc) return
+
+      this.deletingId = doc.id
+      try {
+        await deleteDocument(doc.id)
+        this.uploadedDocs = this.uploadedDocs.filter((d) => d.id !== doc.id)
+      } catch (err) {
+        this.searchError = err.message
+      } finally {
+        this.deletingId = null
+        this.docPendingDelete = null
       }
     },
 
@@ -1051,7 +1115,7 @@ export default {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
-  min-width: 400px;
+  min-width: 440px;
 }
 
 .docs-table__th {
@@ -1071,7 +1135,7 @@ export default {
 
 .docs-table__row {
   background: #161a27;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s;
 }
 
 .docs-table__row:not(:last-child) {
@@ -1079,6 +1143,10 @@ export default {
 }
 
 .docs-table__row:hover { background: #1b2035; }
+
+.docs-table__row--deleting {
+  opacity: 0.5;
+}
 
 .docs-table__td {
   padding: 12px 16px;
@@ -1112,6 +1180,31 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 280px;
+}
+
+.doc-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid #2e3347;
+  border-radius: 8px;
+  color: #7b82a0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.doc-delete-btn:not(:disabled):hover {
+  background: rgba(224, 92, 92, 0.1);
+  border-color: #e05c5c;
+  color: #e05c5c;
+}
+
+.doc-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .badge {

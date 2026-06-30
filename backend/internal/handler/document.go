@@ -32,6 +32,7 @@ type documentService interface {
 	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error)
 	ListDocuments(ctx context.Context) ([]model.Document, error)
 	GetDocument(ctx context.Context, id string) (*model.Document, error)
+	DeleteDocument(ctx context.Context, id string) error
 	Search(ctx context.Context, query, userID string) ([]elastic.SearchHit, error)
 }
 
@@ -178,6 +179,33 @@ func (h *DocumentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, doc)
+}
+
+func (h *DocumentHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "document id is required")
+		return
+	}
+
+	doc, err := h.svc.GetDocument(r.Context(), id)
+	if err != nil {
+		log.Printf("get document error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve document")
+		return
+	}
+	if doc == nil {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+
+	if err := h.svc.DeleteDocument(r.Context(), id); err != nil {
+		log.Printf("delete document error: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to delete document")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *DocumentHandler) Search(w http.ResponseWriter, r *http.Request) {

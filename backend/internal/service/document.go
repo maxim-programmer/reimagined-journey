@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +20,7 @@ type documentRepo interface {
 	Create(ctx context.Context, doc *model.Document) error
 	List(ctx context.Context) ([]model.Document, error)
 	GetByID(ctx context.Context, id string) (*model.Document, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type chunkRepo interface {
@@ -31,15 +34,17 @@ type DocumentService struct {
 	esClient    *elastic.Client
 	cache       *cache.RedisCache
 	historyRepo searchHistoryRepo
+	uploadDir   string
 }
 
-func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elastic.Client, redisCache *cache.RedisCache, historyRepo searchHistoryRepo) *DocumentService {
+func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elastic.Client, redisCache *cache.RedisCache, historyRepo searchHistoryRepo, uploadDir string) *DocumentService {
 	return &DocumentService{
 		repo:        repo,
 		chunkRepo:   chunkRepo,
 		esClient:    esClient,
 		cache:       redisCache,
 		historyRepo: historyRepo,
+		uploadDir:   uploadDir,
 	}
 }
 
@@ -107,6 +112,32 @@ func (s *DocumentService) GetDocument(ctx context.Context, id string) (*model.Do
 		return nil, fmt.Errorf("get document: %w", err)
 	}
 	return doc, nil
+}
+
+func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
+	doc, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get document: %w", err)
+	}
+	if doc == nil {
+		return fmt.Errorf("document not found")
+	}
+
+	if err := s.esClient.DeleteByDocument(ctx, id); err != nil {
+		log.Printf("elasticsearch delete warning for document %s: %v", id, err)
+	}
+
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("delete document: %w", err)
+	}
+
+	ext := filepath.Ext(doc.FileName)
+	filePath := filepath.Join(s.uploadDir, doc.ID+ext)
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		log.Printf("file removal warning for document %s: %v", id, err)
+	}
+
+	return nil
 }
 
 func (s *DocumentService) Search(ctx context.Context, query, userID string) ([]elastic.SearchHit, error) {

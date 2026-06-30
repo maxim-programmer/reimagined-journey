@@ -71,6 +71,18 @@ export async function listDocuments() {
   return response.json()
 }
 
+export async function deleteDocument(id) {
+  const response = await fetch(`${BASE_URL}/api/v1/documents/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || 'Ошибка при удалении документа')
+  }
+  return response.json()
+}
+
 export async function searchDocuments(query) {
   const response = await fetch(`${BASE_URL}/api/v1/search?q=${encodeURIComponent(query)}`, {
     headers: authHeaders(),
