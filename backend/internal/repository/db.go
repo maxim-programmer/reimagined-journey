@@ -34,6 +34,7 @@ func RunMigrations(ctx context.Context, db *pgxpool.Pool) error {
 	_, err = db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS documents (
 			id             TEXT PRIMARY KEY,
+			user_id        TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			file_name      TEXT        NOT NULL,
 			file_size      BIGINT      NOT NULL,
 			mime_type      TEXT        NOT NULL,
@@ -50,7 +51,21 @@ func RunMigrations(ctx context.Context, db *pgxpool.Pool) error {
 		ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT NOT NULL DEFAULT ''
 	`)
 	if err != nil {
-		return fmt.Errorf("alter table documents: %w", err)
+		return fmt.Errorf("alter table documents add extracted_text: %w", err)
+	}
+
+	_, err = db.Exec(ctx, `
+		ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE
+	`)
+	if err != nil {
+		return fmt.Errorf("alter table documents add user_id: %w", err)
+	}
+
+	_, err = db.Exec(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)
+	`)
+	if err != nil {
+		return fmt.Errorf("create index documents user_id: %w", err)
 	}
 
 	_, err = db.Exec(ctx, `

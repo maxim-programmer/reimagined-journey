@@ -4,6 +4,7 @@ import "time"
 
 type Document struct {
 	ID            string    `json:"id"`
+	UserID        string    `json:"-"`
 	FileName      string    `json:"file_name"`
 	FileSize      int64     `json:"file_size"`
 	MimeType      string    `json:"mime_type"`

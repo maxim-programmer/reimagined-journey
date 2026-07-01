@@ -26,6 +26,7 @@ func NewClient(baseURL string) *Client {
 type ChunkDocument struct {
 	ChunkID    string `json:"chunk_id"`
 	DocumentID string `json:"document_id"`
+	UserID     string `json:"user_id"`
 	FileName   string `json:"file_name"`
 	PageNumber int    `json:"page_number"`
 	Text       string `json:"text"`
@@ -82,6 +83,9 @@ func (c *Client) EnsureIndex(ctx context.Context) error {
 					"type": "keyword",
 				},
 				"document_id": map[string]any{
+					"type": "keyword",
+				},
+				"user_id": map[string]any{
 					"type": "keyword",
 				},
 				"file_name": map[string]any{
@@ -168,13 +172,22 @@ func (c *Client) IndexChunk(ctx context.Context, doc ChunkDocument) error {
 	return nil
 }
 
-func (c *Client) Search(ctx context.Context, query string) ([]SearchHit, error) {
+func (c *Client) Search(ctx context.Context, query, userID string) ([]SearchHit, error) {
 	body := map[string]any{
 		"query": map[string]any{
-			"multi_match": map[string]any{
-				"query":  query,
-				"fields": []string{"text", "text.standard", "file_name"},
-				"type":   "best_fields",
+			"bool": map[string]any{
+				"must": map[string]any{
+					"multi_match": map[string]any{
+						"query":  query,
+						"fields": []string{"text", "text.standard", "file_name"},
+						"type":   "best_fields",
+					},
+				},
+				"filter": map[string]any{
+					"term": map[string]any{
+						"user_id": userID,
+					},
+				},
 			},
 		},
 	}

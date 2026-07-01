@@ -80,8 +80,8 @@ func (c *RedisCache) DeleteSession(ctx context.Context, token string) error {
 	return nil
 }
 
-func SearchKey(query string) string {
-	return fmt.Sprintf("search:%s", query)
+func SearchKey(query, userID string) string {
+	return fmt.Sprintf("search:%s:%s", userID, query)
 }
 
 func sessionKey(token string) string {

@@ -29,10 +29,10 @@ var zipMagic = []byte{0x50, 0x4B, 0x03, 0x04}
 var pdfMagic = []byte{0x25, 0x50, 0x44, 0x46}
 
 type documentService interface {
-	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error)
-	ListDocuments(ctx context.Context) ([]model.Document, error)
-	GetDocument(ctx context.Context, id string) (*model.Document, error)
-	DeleteDocument(ctx context.Context, id string) error
+	CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath, userID string) (*model.Document, error)
+	ListDocuments(ctx context.Context, userID string) ([]model.Document, error)
+	GetDocument(ctx context.Context, id, userID string) (*model.Document, error)
+	DeleteDocument(ctx context.Context, id, userID string) error
 	Search(ctx context.Context, query, userID string) ([]elastic.SearchHit, error)
 }
 
@@ -73,6 +73,12 @@ func detectMIMEType(buf []byte, ext string) (string, bool) {
 }
 
 func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	if err := r.ParseMultipartForm(maxFileSize); err != nil {
 		writeError(w, http.StatusBadRequest, "request body too large or malformed")
 		return
@@ -131,7 +137,7 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp.Close()
 
-	doc, err := h.svc.CreateDocument(r.Context(), header.Filename, header.Size, mimeType, tmpPath)
+	doc, err := h.svc.CreateDocument(r.Context(), header.Filename, header.Size, mimeType, tmpPath, userID)
 	if err != nil {
 		os.Remove(tmpPath)
 		log.Printf("create document error: %v", err)
@@ -148,7 +154,13 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.svc.ListDocuments(r.Context())
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	docs, err := h.svc.ListDocuments(r.Context(), userID)
 	if err != nil {
 		log.Printf("list documents error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to retrieve documents")
@@ -167,7 +179,13 @@ func (h *DocumentHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := h.svc.GetDocument(r.Context(), id)
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	doc, err := h.svc.GetDocument(r.Context(), id, userID)
 	if err != nil {
 		log.Printf("get document error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to retrieve document")
@@ -188,7 +206,13 @@ func (h *DocumentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := h.svc.GetDocument(r.Context(), id)
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	doc, err := h.svc.GetDocument(r.Context(), id, userID)
 	if err != nil {
 		log.Printf("get document error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to retrieve document")
@@ -199,7 +223,7 @@ func (h *DocumentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.DeleteDocument(r.Context(), id); err != nil {
+	if err := h.svc.DeleteDocument(r.Context(), id, userID); err != nil {
 		log.Printf("delete document error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to delete document")
 		return
@@ -216,6 +240,10 @@ func (h *DocumentHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 
 	hits, err := h.svc.Search(r.Context(), query, userID)
 	if err != nil {

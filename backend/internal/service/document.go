@@ -18,9 +18,9 @@ import (
 
 type documentRepo interface {
 	Create(ctx context.Context, doc *model.Document) error
-	List(ctx context.Context) ([]model.Document, error)
-	GetByID(ctx context.Context, id string) (*model.Document, error)
-	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, userID string) ([]model.Document, error)
+	GetByID(ctx context.Context, id, userID string) (*model.Document, error)
+	Delete(ctx context.Context, id, userID string) error
 }
 
 type chunkRepo interface {
@@ -48,7 +48,7 @@ func NewDocumentService(repo documentRepo, chunkRepo chunkRepo, esClient *elasti
 	}
 }
 
-func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath string) (*model.Document, error) {
+func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, fileSize int64, mimeType, filePath, userID string) (*model.Document, error) {
 	pages, err := extractor.ExtractPages(filePath, mimeType)
 	if err != nil {
 		log.Printf("text extraction warning for %s: %v", fileName, err)
@@ -58,6 +58,7 @@ func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, f
 
 	doc := &model.Document{
 		ID:            uuid.New().String(),
+		UserID:        userID,
 		FileName:      fileName,
 		FileSize:      fileSize,
 		MimeType:      mimeType,
@@ -85,6 +86,7 @@ func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, f
 			esDoc := elastic.ChunkDocument{
 				ChunkID:    chunkID,
 				DocumentID: doc.ID,
+				UserID:     userID,
 				FileName:   fileName,
 				PageNumber: chunk.PageNumber,
 				Text:       chunk.Content,
@@ -98,24 +100,24 @@ func (s *DocumentService) CreateDocument(ctx context.Context, fileName string, f
 	return doc, nil
 }
 
-func (s *DocumentService) ListDocuments(ctx context.Context) ([]model.Document, error) {
-	docs, err := s.repo.List(ctx)
+func (s *DocumentService) ListDocuments(ctx context.Context, userID string) ([]model.Document, error) {
+	docs, err := s.repo.List(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list documents: %w", err)
 	}
 	return docs, nil
 }
 
-func (s *DocumentService) GetDocument(ctx context.Context, id string) (*model.Document, error) {
-	doc, err := s.repo.GetByID(ctx, id)
+func (s *DocumentService) GetDocument(ctx context.Context, id, userID string) (*model.Document, error) {
+	doc, err := s.repo.GetByID(ctx, id, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get document: %w", err)
 	}
 	return doc, nil
 }
 
-func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
-	doc, err := s.repo.GetByID(ctx, id)
+func (s *DocumentService) DeleteDocument(ctx context.Context, id, userID string) error {
+	doc, err := s.repo.GetByID(ctx, id, userID)
 	if err != nil {
 		return fmt.Errorf("get document: %w", err)
 	}
@@ -127,7 +129,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 		log.Printf("elasticsearch delete warning for document %s: %v", id, err)
 	}
 
-	if err := s.repo.Delete(ctx, id); err != nil {
+	if err := s.repo.Delete(ctx, id, userID); err != nil {
 		return fmt.Errorf("delete document: %w", err)
 	}
 
@@ -145,7 +147,7 @@ func (s *DocumentService) Search(ctx context.Context, query, userID string) ([]e
 		return []elastic.SearchHit{}, nil
 	}
 
-	cacheKey := cache.SearchKey(query)
+	cacheKey := cache.SearchKey(query, userID)
 
 	var cached []elastic.SearchHit
 	hit, err := s.cache.Get(ctx, cacheKey, &cached)
@@ -158,7 +160,7 @@ func (s *DocumentService) Search(ctx context.Context, query, userID string) ([]e
 		log.Printf("cache hit for query %q", query)
 		hits = cached
 	} else {
-		hits, err = s.esClient.Search(ctx, query)
+		hits, err = s.esClient.Search(ctx, query, userID)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
